@@ -22,7 +22,7 @@ import time
 import webbrowser
 from http.server import ThreadingHTTPServer
 
-from core.config import APP_NAME, app_dir, config_path, is_frozen
+from core.config import APP_NAME, app_dir, config_path, force_utf8_stdout, is_frozen
 from core.webapp import DEFAULT_PORT, create_server, serve
 
 BANNER = """
@@ -56,17 +56,8 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _force_utf8_output() -> None:
-    """中文输出的兜底。
-
-    真实的控制台窗口里 Python 走 Windows Unicode API，中文本来就正常；
-    但输出被重定向到管道/文件时，Python 会用系统 ANSI 代码页（简体中文是 GBK），
-    中文就变乱码。统一改成 UTF-8，两种场景都正常。
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
+    """中文输出的兜底（实现见 core/config.py，这里保留同名入口方便阅读）。"""
+    force_utf8_stdout()
 
 
 def find_running_instance(host: str, port: int) -> str | None:

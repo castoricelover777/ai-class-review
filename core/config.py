@@ -56,6 +56,21 @@ def _candidate_config_paths() -> list[Path]:
     return paths
 
 
+def force_utf8_stdout() -> None:
+    """让标准输出用 UTF-8，避免中文在控制台/重定向时炸掉。
+
+    真实的控制台窗口里 Python 走 Windows Unicode API，中文本来就正常；
+    但输出被重定向到管道或文件时，Python 会用系统 ANSI 代码页（简体中文是 GBK、
+    英文 Windows 是 cp1252），这时 `print("中文")` 会抛 UnicodeEncodeError。
+    一个后台线程如果因为打印失败而挂掉，界面上就会永远转圈——所以这件事要兜住。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def config_path(create_dir: bool = True) -> Path:
     """挑一个可写的 config.ini 路径。"""
     candidates = _candidate_config_paths()
@@ -74,7 +89,6 @@ def config_path(create_dir: bool = True) -> Path:
         except OSError:
             continue
     return candidates[0]
-
 
 @dataclass
 class AppConfig:

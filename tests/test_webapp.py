@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import random
+import sys
 import tempfile
 import threading
 import time
@@ -328,6 +329,36 @@ class TestExportApi(ApiTestCase):
         status, body, _ = self.request("/api/export", {"results": [{"name": "张三"}]})
         self.assertEqual(status, 200)
         self.assertEqual(body[:2], b"PK")
+
+
+class TestJobSurvivesBrokenStdout(ApiTestCase):
+    """回归测试：控制台编码不了中文时，打分任务也绝不能卡死。
+
+    背景：任务线程里原本有一句中文 print 写在 try 之外。在 stdout 编码不了中文的
+    环境（Windows 默认 ANSI 代码页、或输出被重定向到管道/文件）里，这句 print 会抛
+    UnicodeEncodeError，线程当场死掉，任务永远停在 running——界面上就一直转圈，
+    老师永远等不到结果，也看不到任何错误。
+
+    这里把 sys.stdout 换成一个写不了中文的流来复现当时的场景。
+    """
+
+    def test_job_completes_with_unencodable_stdout(self):
+        broken = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+        original = sys.stdout
+        sys.stdout = broken
+        try:
+            # 先确认这个流真的写不了中文，否则这个用例就失去意义了
+            with self.assertRaises(UnicodeEncodeError):
+                broken.write("中文")
+            subs = self.parse_sample()
+            _, rubric_data = self.get_json("/api/rubric")
+            snap = self.grade_and_wait(subs, rubric_data["rubric"], mode="mock", timeout=25)
+        finally:
+            sys.stdout = original
+
+        self.assertEqual(snap["state"], "done", f"任务没有正常结束：{snap}")
+        self.assertEqual(len(snap["results"]), 2)
+        self.assertTrue(all(r["total"] > 0 for r in snap["results"]))
 
 
 class TestShutdown(ApiTestCase):

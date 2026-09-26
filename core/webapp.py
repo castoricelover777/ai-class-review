@@ -22,6 +22,7 @@ HTTP 服务用标准库 ``http.server``，大模型调用用 ``urllib``——
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 import uuid
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .config import AppConfig, resource_path
+from .config import AppConfig, force_utf8_stdout, resource_path
 from .exporter import suggested_filename, to_bytes
 from .grader import GradeResult, grade_batch
 from .parser import parse_wechat_text
@@ -48,6 +49,30 @@ _FALLBACK_HTML = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <h1>界面文件丢失</h1>
 <p>没有找到 <code>web/index.html</code>，也没有内置界面。</p>
 <p>请重新下载完整的程序包。</p></body></html>"""
+
+
+# --------------------------------------------------------------------------- #
+# 控制台输出
+# --------------------------------------------------------------------------- #
+
+def _console(text: str, end: str = "\n") -> None:
+    """往控制台写一行，**保证不抛异常**。
+
+    任务线程里的一句中文 print，在 stdout 编码不了中文的环境（Windows 默认
+    ANSI 代码页、或输出被重定向）会抛 UnicodeEncodeError。如果这句 print 恰好
+    在 try 之外，线程就直接死了，任务永远停在 running，界面上一直转圈。
+    这个函数就是那道保险：打印失败最多丢一行日志，绝不能影响评阅任务。
+    """
+    try:
+        print(text, end=end, flush=True)
+        return
+    except (UnicodeEncodeError, OSError, ValueError):
+        pass
+    try:
+        sys.stdout.write(text.encode("ascii", "backslashreplace").decode("ascii") + end)
+        sys.stdout.flush()
+    except Exception:                     # pragma: no cover - 真的写不出去就算了
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -319,26 +344,26 @@ class _Handler(BaseHTTPRequestHandler):
 
         def run() -> None:
             label = "演示模式" if mode == "mock" else f"调用 {cfg.model}"
-            print(f"\n开始评阅 {len(submissions)} 份心得（{label}）…", flush=True)
+            _console(f"\n开始评阅 {len(submissions)} 份心得（{label}）…")
             try:
                 def on_progress(done: int, total: int) -> None:
                     job.done = done
                     job.total = total
                     # 控制台给老师一个"程序还在干活"的反馈
-                    print(f"\r  正在评阅 {done}/{total} …", end="", flush=True)
+                    _console(f"\r  正在评阅 {done}/{total} …", end="")
 
                 job.results = grade_batch(
                     submissions, rubric, cfg, mode=mode, progress=on_progress
                 )
                 job.state = "done"
                 failed = sum(1 for r in job.results if r.error)
-                print(f"\r  评阅完成：{len(job.results)} 份"
-                      + (f"，其中 {failed} 份失败" if failed else "")
-                      + "。请回到浏览器继续操作。", flush=True)
+                _console(f"\r  评阅完成：{len(job.results)} 份"
+                         + (f"，其中 {failed} 份失败" if failed else "")
+                         + "。请回到浏览器继续操作。")
             except Exception as exc:  # pragma: no cover - 线程内兜底
                 job.error = str(exc)
                 job.state = "error"
-                print(f"\r  评阅中断：{exc}", flush=True)
+                _console(f"\r  评阅中断：{exc}")
             finally:
                 job.finished_at = time.time()
 
@@ -405,6 +430,7 @@ def _pid() -> int:
 
 def create_server(port: int = DEFAULT_PORT, config_path: Path | None = None,
                   host: str = "127.0.0.1") -> ThreadingHTTPServer:
+    force_utf8_stdout()          # 让控制台中文输出有个兜底，别让线程因打印失败而死
     state = AppState(config_path)
     for candidate in range(port, port + 40):
         try:
