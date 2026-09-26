@@ -661,15 +661,26 @@ const pyBackend = {
     }
     pyodide.runPython("import sys\nsys.path.insert(0, '/app')");
 
-    // openpyxl 装上了才能导出真正的 .xlsx，装不上就退化成 CSV
+    // Excel 导出组件由站点自带（vendor.zip），不去 PyPI 现装——
+    // 否则网络一抖，页面就卡在"正在准备 Excel 导出…"不动了。
+    stage("正在准备 Excel 导出组件…");
     try {
-      stage("正在准备 Excel 导出…");
-      await pyodide.loadPackage("micropip");
-      const micropip = pyodide.pyimport("micropip");
-      await micropip.install("openpyxl");
+      const resp = await fetch("vendor.zip");
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      pyodide.FS.writeFile("/app/vendor.zip", new Uint8Array(await resp.arrayBuffer()));
+      pyodide.runPython(`
+import sys, zipfile
+with zipfile.ZipFile("/app/vendor.zip") as _z:
+    _z.extractall("/app/vendor")
+sys.path.insert(0, "/app/vendor")
+import openpyxl
+_openpyxl_version = openpyxl.__version__
+`);
       this.exportOk = true;
+      console.info("Excel 组件就绪：openpyxl", pyodide.globals.get("_openpyxl_version"));
     } catch (e) {
-      console.warn("openpyxl 未能安装，导出将退化为 CSV：", e);
+      this.exportOk = false;
+      console.warn("Excel 组件没能装载，导出将退化成 CSV：", e);
     }
     this.B = pyodide.pyimport("core.bridge");
     return true;
