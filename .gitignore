@@ -12,6 +12,8 @@ dist/
 # 打包时由 build.py 自动生成（内容来自 web/index.html）
 core/_frontend.py
 _shots/
+_site/
+
 
 # 老师本地的配置（含 API Key，绝对不能提交）
 config.ini

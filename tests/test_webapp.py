@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import random
+import re
 import sys
 import tempfile
 import threading
@@ -109,11 +110,33 @@ class TestStaticAndHealth(ApiTestCase):
         self.assertIn("课堂心得评阅台", body.decode("utf-8"))
 
     def test_index_html_is_self_contained(self):
+        """界面自带的样式和脚本必须内联，不能靠外链才能显示。"""
         html = load_index_html()
-        self.assertNotIn("http://cdn", html)
-        self.assertNotIn("https://cdn", html)
-        self.assertNotIn("<script src=", html)     # 不依赖外部脚本
+        self.assertNotIn("<script src=", html)          # 没有外链脚本
+        self.assertNotIn('<link rel="stylesheet"', html)  # 没有外链样式
         self.assertIn("</html>", html)
+
+    def test_only_expected_external_urls(self):
+        """界面上出现的外部地址必须都是"意料之中"的。
+
+        注意区分两类：
+          · 会去**加载资源**的：只允许 Pyodide 运行时（而且只在线版用到；
+            exe 版启动时探测到本机服务就直接走 HTTP，永远不会请求它）。
+          · 只是**默认配置值**的：大模型接口地址（老师可以在设置里改成别的）。
+        """
+        html = load_index_html()
+        urls = set(re.findall(r"https?://[a-zA-Z0-9._\-/]+", html))
+        allowed_prefixes = (
+            "https://cdn.jsdelivr.net/pyodide/",   # Pyodide 运行时（仅在线版）
+            "https://api.deepseek.com/",           # 默认接口地址，可改
+            "http://www.w3.org/",                  # SVG 命名空间，不是网络请求
+        )
+        unexpected = [u for u in urls if not u.startswith(allowed_prefixes)]
+        self.assertEqual(unexpected, [], f"出现了计划外的外部地址：{unexpected}")
+
+        # 关键：只有探测不到本机服务时，才会去加载 Pyodide
+        self.assertIn("PYODIDE_URL", html)
+        self.assertLess(html.index('fetch("api/health"'), html.index("await pyBackend.init"))
 
     def test_health(self):
         status, data = self.get_json("/api/health")

@@ -15,6 +15,23 @@
 
 ---
 
+## 在线试用（无需安装、无需注册）
+
+### 👉 https://castoricelover777.github.io/ai-class-review/
+
+打开就能用。**整个程序都跑在你自己的浏览器里，没有服务器**——
+解析、打分、导出用的都是仓库里那份 Python 代码（用
+[Pyodide](https://pyodide.org/) 编译成 WebAssembly 在浏览器里跑）。
+
+- **API Key 只存在你自己的浏览器里**，由浏览器直接发给大模型服务商，不经过任何第三方服务器
+- 没配 Key 也能玩：点「填入示例」→「开始 AI 打分」，会走**演示模式**（占位分数）
+- 第一次打开要下载约 10MB 的 Python 运行时，之后走浏览器缓存
+
+> 在线版和 exe 版**共用同一份核心代码**，不存在"网页版改了、exe 版忘了改"的问题。
+> `tests/test_bridge.py` 里有用例专门盯着两者：Prompt 必须逐字一致、分数必须相同。
+
+---
+
 ## 快速开始
 
 ### 方式一：下载 exe（老师用）
@@ -61,6 +78,7 @@ ai-class-review/
 ├── app.py                     程序入口：起本地服务 + 自动开浏览器 + --selftest 自检
 ├── verify_exe.py              验证打包出来的 exe（模拟双击，从外部走全流程）
 ├── build.py                   打包脚本（跑测试 → 内联界面 → PyInstaller）
+├── build_pages.py             组装在线版静态站（界面 + core/*.py）
 ├── 使用说明.txt                给老师的说明，随 exe 一起交付
 ├── Dockerfile                 可选：部署成在线服务
 ├── requirements.txt
@@ -74,17 +92,37 @@ ai-class-review/
 │   ├── grader.py              大模型打分 + 防抄袭 + 防 AI 代写
 │   ├── exporter.py            Excel 导出（成绩表 / 规则存档 / 雷同比对）
 │   ├── config.py              config.ini 读写（API Key 等）
-│   └── webapp.py              本地 HTTP 服务与 API
+│   ├── webapp.py              本地 HTTP 服务与 API（exe 版）
+│   └── bridge.py              浏览器版接口层（在线版，JSON 进 JSON 出）
 │
-├── web/index.html             界面（单文件，CSS/JS 全内联，不依赖任何外部资源）
-├── tests/                     186 个单元测试 + 8 份真实粘贴样本
+├── web/index.html             界面（单文件，CSS/JS 全内联）
+├── tests/                     203 个单元测试 + 8 份真实粘贴样本
 ├── docs/                      界面截图
-└── .github/workflows/         CI：每次提交自动跑测试 + 自检
+└── .github/workflows/         CI：每次提交跑测试；main 分支自动发布在线版
 ```
 
 ---
 
 ## 三、几个关键设计
+
+### 同一份界面，两种后端
+
+界面只有一份（`web/index.html`），启动时探测一下 `/api/health`：
+
+| 环境 | 后端 | API Key 存哪 |
+|---|---|---|
+| exe / 本机运行 | `core/webapp.py` 起的本地 HTTP 服务 | 程序旁边的 `config.ini` |
+| 在线版（GitHub Pages） | Pyodide 把 `core/*.py` 跑在浏览器里 | 浏览器 localStorage |
+
+浏览器里没有 `urllib`、也没有真正的多线程，所以打分被拆成三步：
+
+```
+bridge.prepare_grade()   → 算同批次相似度 + 本地信号 + 拼好 Prompt
+        ↓  JS 用 fetch 发给大模型（可并发）
+bridge.finish_grade()    → 解析模型回复、夹分、合并风险
+```
+
+这样**调优过的正则、Prompt、评分逻辑一份都不用重写**，在线版和 exe 版永远同步。
 
 ### 解析群聊记录（`core/parser.py`）
 
@@ -168,7 +206,7 @@ python app.py --no-browser --port 8904
 ### 测试
 
 ```bash
-python -m unittest discover -s tests -t . -v     # 186 passed，不需要任何 API Key
+python -m unittest discover -s tests -t . -v     # 203 passed，不需要任何 API Key
 ```
 
 覆盖：解析器（含 8 份真实粘贴样本回归）、名单、评分规则、打分与防抄袭（联网路径用 mock 顶替）、

@@ -15,15 +15,29 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.worksheet import Worksheet
+# openpyxl 惰性可用：浏览器版（Pyodide）里可以用 CSV 兜底，
+# 所以「没装 openpyxl」不能导致整个模块导入失败。
+try:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.worksheet import Worksheet
+
+    OPENPYXL_AVAILABLE = True
+except ImportError:  # pragma: no cover - 只在没装 openpyxl 的环境走到
+    Workbook = None  # type: ignore[assignment]
+    Alignment = Border = Font = PatternFill = Side = None  # type: ignore[assignment]
+    Worksheet = Any  # type: ignore[misc,assignment]
+    OPENPYXL_AVAILABLE = False
+
+    def get_column_letter(index: int) -> str:  # type: ignore[misc]
+        """仅用于类型注解，不会真的被调用。"""
+        return "A"
 
 from .grader import GradeResult
 from .rules import Rubric
 
-__all__ = ["build_workbook", "to_bytes", "save", "suggested_filename"]
+__all__ = ["build_workbook", "to_bytes", "save", "suggested_filename", "OPENPYXL_AVAILABLE"]
 
 # 与界面同一套配色：纸白 / 墨黑 / 朱批红
 INK = "1C1917"
@@ -33,22 +47,26 @@ AMBER = "B45309"
 MOSS = "3F6B4A"
 LINE = "D9D3CA"
 
-_HEADER_FILL = PatternFill("solid", fgColor=INK)
-_HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
-_TITLE_FONT = Font(color=INK, bold=True, size=14)
-_SUB_FONT = Font(color="6B6259", size=10)
-_BAND_FILL = PatternFill("solid", fgColor=PAPER)
-
-_RISK_FONT = {
-    "high": Font(color=SEAL, bold=True),
-    "medium": Font(color=AMBER, bold=True),
-    "low": Font(color=AMBER),
-    "none": Font(color=MOSS),
-}
 _RISK_TEXT = {"high": "高", "medium": "中", "low": "低", "none": "—"}
 
-_THIN = Side(style="thin", color=LINE)
-_BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+if OPENPYXL_AVAILABLE:
+    _HEADER_FILL = PatternFill("solid", fgColor=INK)
+    _HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
+    _TITLE_FONT = Font(color=INK, bold=True, size=14)
+    _SUB_FONT = Font(color="6B6259", size=10)
+    _BAND_FILL = PatternFill("solid", fgColor=PAPER)
+    _RISK_FONT = {
+        "high": Font(color=SEAL, bold=True),
+        "medium": Font(color=AMBER, bold=True),
+        "low": Font(color=AMBER),
+        "none": Font(color=MOSS),
+    }
+    _THIN = Side(style="thin", color=LINE)
+    _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
+else:  # pragma: no cover
+    _HEADER_FILL = _HEADER_FONT = _TITLE_FONT = _SUB_FONT = _BAND_FILL = None
+    _RISK_FONT = {}
+    _THIN = _BORDER = None
 
 
 def _sheet_title(ws: Worksheet, title: str, subtitle: str, span: int) -> int:

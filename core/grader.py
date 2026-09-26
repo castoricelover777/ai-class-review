@@ -21,8 +21,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import urllib.error
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
@@ -40,7 +38,14 @@ __all__ = [
     "grade_batch",
     "grade_one",
     "chat_completion",
+    "build_messages",
+    "new_result",
+    "finish_from_reply",
+    "fail_result",
+    "mock_result",
+    "parse_model_json",
     "LLMError",
+    "SYSTEM_PROMPT",
 ]
 
 RISK_ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3}
@@ -500,6 +505,10 @@ def chat_completion(
 
 
 def _post_json(url: str, payload: dict[str, Any], api_key: str, timeout: int) -> dict[str, Any]:
+    # 惰性导入：浏览器版（Pyodide）里没有可用的网络栈，模块导入阶段不能碰 urllib
+    import urllib.error
+    import urllib.request
+
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -629,6 +638,92 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 # 五、单份 / 批量打分
 # --------------------------------------------------------------------------- #
 
+def build_messages(
+    rubric: Rubric,
+    *,
+    name: str,
+    content: str,
+    student_id: str | None = None,
+    similarity: Sequence[SimilarityHit] = (),
+    signals: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """拼出要发给大模型的消息。
+
+    单独抽出来是为了**浏览器版能复用同一套 Prompt**：网页里没法用 urllib，
+    得由 JS 发请求，但 Prompt 和结果解析仍然用这里的 Python 代码，
+    避免同一个提示词维护两份、慢慢跑偏。
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": _build_user_prompt(
+                rubric=rubric,
+                name=name,
+                student_id=student_id,
+                content=content,
+                similarity=similarity,
+                signals=signals if signals is not None else ai_flavor_signals(content),
+            ),
+        },
+    ]
+
+
+def new_result(
+    *,
+    rubric: Rubric,
+    name: str,
+    content: str,
+    student_id: str | None = None,
+    raw_name: str = "",
+    similarity: Sequence[SimilarityHit] = (),
+    source: str = "llm",
+) -> GradeResult:
+    """建一份空结果，并把本地信号（AI 味启发式）算好。"""
+    signals = ai_flavor_signals(content)
+    return GradeResult(
+        name=name,
+        raw_name=raw_name or name,
+        content=content,
+        student_id=student_id,
+        max_total=rubric.total,
+        similarity=list(similarity),
+        ai_signals=signals,
+        source=source,
+    )
+
+
+def finish_from_reply(rubric: Rubric, result: GradeResult, reply: str) -> GradeResult:
+    """拿模型返回的文本（或错误信息）把一份结果填完。
+
+    与 :func:`grade_one` 共用同一套解析与夹分逻辑，浏览器版直接调这个。
+    """
+    try:
+        payload = parse_model_json(reply)
+    except LLMError as exc:
+        result.error = str(exc)
+        _fill_empty(result, rubric)
+        return result
+    _fill_from_model(result, rubric, payload)
+    _merge_risk(result, result.ai_signals)
+    return result
+
+
+def fail_result(rubric: Rubric, result: GradeResult, message: str) -> GradeResult:
+    """网络/鉴权失败时，给老师一份可编辑的空壳，而不是把这条丢掉。"""
+    result.error = message
+    _fill_empty(result, rubric)
+    _merge_risk(result, result.ai_signals)
+    return result
+
+
+def mock_result(rubric: Rubric, result: GradeResult) -> GradeResult:
+    """演示模式：用本地启发式给出确定性的占位分数（不联网）。"""
+    _fill_mock(result, rubric, result.content, result.ai_signals)
+    _merge_risk(result, result.ai_signals)
+    return result
+
+
 def grade_one(
     *,
     rubric: Rubric,
@@ -642,50 +737,28 @@ def grade_one(
 ) -> GradeResult:
     """给一份心得打分。``mode="mock"`` 时走本地演示打分，不联网。"""
     effective_mode = mode or (cfg.mode if cfg else "mock")
-    signals = ai_flavor_signals(content)
-    result = GradeResult(
+    result = new_result(
+        rubric=rubric,
         name=name,
-        raw_name=raw_name or name,
         content=content,
         student_id=student_id,
-        max_total=rubric.total,
-        similarity=list(similarity),
-        ai_signals=signals,
+        raw_name=raw_name,
+        similarity=similarity,
         source="mock" if effective_mode == "mock" else "llm",
     )
 
     if effective_mode == "mock":
-        _fill_mock(result, rubric, content, signals)
-        _merge_risk(result, signals)
-        return result
+        return mock_result(rubric, result)
 
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": _build_user_prompt(
-                rubric=rubric,
-                name=name,
-                student_id=student_id,
-                content=content,
-                similarity=similarity,
-                signals=signals,
-            ),
-        },
-    ]
-
+    messages = build_messages(
+        rubric, name=name, content=content, student_id=student_id,
+        similarity=similarity, signals=result.ai_signals,
+    )
     try:
         reply = chat_completion(cfg, messages)
-        payload = parse_model_json(reply)
     except LLMError as exc:
-        result.error = str(exc)
-        # 出错也要给老师一份可编辑的空壳，而不是把这条丢掉
-        _fill_empty(result, rubric)
-        return result
-
-    _fill_from_model(result, rubric, payload)
-    _merge_risk(result, signals)
-    return result
+        return fail_result(rubric, result, str(exc))
+    return finish_from_reply(rubric, result, reply)
 
 
 def _fill_from_model(result: GradeResult, rubric: Rubric, payload: dict[str, Any]) -> None:

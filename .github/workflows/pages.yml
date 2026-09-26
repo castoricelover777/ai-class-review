@@ -1,0 +1,60 @@
+name: pages
+
+# 把程序组装成在线版并发布到 GitHub Pages。
+# 在线版把同一份 Python 核心通过 Pyodide 跑在浏览器里，不需要任何服务器。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "core/**"
+      - "build_pages.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 组装静态站
+        run: python build_pages.py --out _site
+
+      - name: 确认关键文件都在
+        run: |
+          test -f _site/index.html
+          test -f _site/core/parser.py
+          test -f _site/core/bridge.py
+          test -f _site/.nojekyll
+          ls -la _site _site/core
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

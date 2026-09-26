@@ -271,6 +271,25 @@ textarea.cmt.big{min-height:64px}
 .meter .track{flex:1;height:5px;background:#EDEAE4;border-radius:99px;overflow:hidden}
 .meter .fill{height:100%;border-radius:99px;background:var(--seal)}
 .footer-note{text-align:center;color:var(--ink-3);font-size:12px;padding:24px 0 0}
+
+/* ---------------- 启动引导 ---------------- */
+#boot{
+  position:fixed;inset:0;z-index:200;background:var(--paper);
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  transition:opacity .3s ease;
+}
+#boot.gone{opacity:0;pointer-events:none}
+#boot .mark{
+  width:40px;height:40px;border-radius:11px;background:var(--seal);margin:0 auto 16px;
+  display:flex;align-items:center;justify-content:center;
+}
+#boot h2{font-size:17px;margin-bottom:6px}
+#boot p{color:var(--ink-3);font-size:13px;margin:0;max-width:420px}
+#boot .dots{display:inline-flex;gap:5px;margin-top:16px}
+#boot .dots i{width:6px;height:6px;border-radius:50%;background:var(--seal);opacity:.35;animation:pulse 1.2s infinite}
+#boot .dots i:nth-child(2){animation-delay:.2s}
+#boot .dots i:nth-child(3){animation-delay:.4s}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
 </style>
 </head>
 <body>
@@ -447,6 +466,19 @@ textarea.cmt.big{min-height:64px}
   </section>
 </main>
 
+<div id="boot">
+  <div>
+    <div class="mark">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F7F5F1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12.5l5.2 5.2L20 6.6"/>
+      </svg>
+    </div>
+    <h2>课堂心得评阅台</h2>
+    <p id="bootText">正在检查运行环境…</p>
+    <div class="dots"><i></i><i></i><i></i></div>
+  </div>
+</div>
+
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer">
   <div class="hd"><h2 style="font-size:15px">设置</h2><div class="spacer"></div><button class="btn ghost sm" id="btnDrawerClose">关闭</button></div>
@@ -539,6 +571,255 @@ async function api(path, body) {
   if (!resp.ok || data.ok === false) throw new Error(data.error || ("请求失败（HTTP " + resp.status + "）"));
   return data;
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ==========================================================================
+   后端适配层
+   --------------------------------------------------------------------------
+   同一份界面要跑在两个地方：
+     · exe 版  —— 本机有个 Python 服务，走 HTTP
+     · 在线版  —— GitHub Pages 上把同一份 Python 用 Pyodide 跑在浏览器里，
+                  没有服务器，API Key 只存在浏览器本地，不经过任何第三方
+   启动时探测一下 /api/health，谁在就用谁，界面代码不用改。
+   ========================================================================== */
+
+const CORE_FILES = ["__init__.py", "models.py", "textutil.py", "roster.py", "parser.py",
+  "rules.py", "grader.py", "exporter.py", "config.py", "bridge.py"];
+const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/";
+const LS_KEY = "class-review-config";
+
+function b64ToBlob(b64, mime) {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return new Blob([buf], { type: mime });
+}
+
+/* ---------------- 后端一：本机服务（exe 用） ---------------- */
+const httpBackend = {
+  id: "http",
+  canQuit: true,
+  async init() { return true; },
+  async getConfig() { return (await api("/api/config")).config; },
+  async saveConfig(payload) { return (await api("/api/config", payload)).config; },
+  async getRubric() { return (await api("/api/rubric")).rubric; },
+  async parse(payload) { return api("/api/parse", payload); },
+  async grade(subs, rubric, onProgress) {
+    const started = await api("/api/grade", { submissions: subs, rubric, mode: null });
+    for (;;) {
+      await sleep(450);
+      const snap = await api("/api/grade/status?job_id=" + encodeURIComponent(started.job_id));
+      if (onProgress) onProgress(snap.done, snap.total, snap.elapsed);
+      if (snap.state === "running") continue;
+      if (snap.state === "error") throw new Error(snap.error || "打分失败");
+      return { results: snap.results || [], mode: snap.mode };
+    }
+  },
+  async exportFile(payload) {
+    const resp = await fetch("/api/export", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      let msg = "导出失败（HTTP " + resp.status + "）";
+      try { const j = await resp.json(); if (j.error) msg = j.error; } catch (e) { }
+      throw new Error(msg);
+    }
+    const enc = resp.headers.get("X-Filename-Encoded");
+    let filename = "课堂心得成绩.xlsx";
+    if (enc) { try { filename = decodeURIComponent(enc); } catch (e) { } }
+    return { blob: await resp.blob(), filename };
+  },
+  async quit() { try { await api("/api/shutdown", {}); } catch (e) { } }
+};
+
+/* ---------------- 后端二：浏览器内的 Python（在线版用） ---------------- */
+const pyBackend = {
+  id: "pyodide",
+  canQuit: false,
+  B: null,
+  exportOk: false,
+
+  async init(onStage) {
+    const stage = onStage || (() => { });
+    stage("正在下载 Python 运行时（约 10MB，只需一次）…");
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = PYODIDE_URL + "pyodide.js";
+      s.onload = res;
+      s.onerror = () => rej(new Error("加载 Pyodide 失败，请检查网络"));
+      document.head.appendChild(s);
+    });
+    const pyodide = await loadPyodide({ indexURL: PYODIDE_URL });
+    this.pyodide = pyodide;
+
+    stage("正在装载解析与打分逻辑…");
+    pyodide.FS.mkdirTree("/app/core");
+    for (const name of CORE_FILES) {
+      const resp = await fetch("core/" + name);
+      if (!resp.ok) throw new Error("取不到 core/" + name);
+      pyodide.FS.writeFile("/app/core/" + name, await resp.text());
+    }
+    pyodide.runPython("import sys\nsys.path.insert(0, '/app')");
+
+    // openpyxl 装上了才能导出真正的 .xlsx，装不上就退化成 CSV
+    try {
+      stage("正在准备 Excel 导出…");
+      await pyodide.loadPackage("micropip");
+      const micropip = pyodide.pyimport("micropip");
+      await micropip.install("openpyxl");
+      this.exportOk = true;
+    } catch (e) {
+      console.warn("openpyxl 未能安装，导出将退化为 CSV：", e);
+    }
+    this.B = pyodide.pyimport("core.bridge");
+    return true;
+  },
+
+  _cfg() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}") || {}; } catch (e) { }
+    return Object.assign({
+      api_key: "", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat",
+      class_name: "", concurrency: 3, timeout: 90
+    }, saved);
+  },
+
+  async getConfig() {
+    const c = this._cfg();
+    const has = !!(c.api_key && c.api_key.length > 8);
+    return {
+      has_api_key: has,
+      api_key_masked: has ? c.api_key.slice(0, 6) + "********" + c.api_key.slice(-4) : "",
+      base_url: c.base_url, model: c.model, class_name: c.class_name,
+      concurrency: c.concurrency, timeout: c.timeout,
+      mode: has ? "live" : "mock",
+      config_path: "浏览器本地存储（不会上传到任何服务器）",
+      frozen: false, app_dir: location.origin, online: true,
+      export_available: this.exportOk
+    };
+  },
+
+  async saveConfig(payload) {
+    const c = this._cfg();
+    for (const k of ["api_key", "base_url", "model", "class_name"]) {
+      if (payload[k] !== undefined && !String(payload[k]).includes("*")) c[k] = String(payload[k]).trim();
+    }
+    for (const k of ["concurrency", "timeout"]) {
+      if (payload[k] !== undefined) c[k] = Math.max(1, Math.min(16, Number(payload[k]) || c[k]));
+    }
+    localStorage.setItem(LS_KEY, JSON.stringify(c));
+    return this.getConfig();
+  },
+
+  async getRubric() { return JSON.parse(this.B.bootstrap()).rubric; },
+
+  async parse(payload) {
+    const out = JSON.parse(this.B.parse_chat(JSON.stringify(payload)));
+    if (!out.ok) throw new Error(out.error || "解析失败");
+    return out;
+  },
+
+  async _callLLM(messages, cfg) {
+    const url = String(cfg.base_url || "").replace(/\/+$/, "") + "/chat/completions";
+    const body = {
+      model: cfg.model, messages, temperature: 0.2, stream: false,
+      response_format: { type: "json_object" }
+    };
+    const send = async () => fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.api_key },
+      body: JSON.stringify(body)
+    });
+    let resp = await send();
+    if (resp.status === 400) { delete body.response_format; resp = await send(); }  // 有些服务商不认 response_format
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      const raw = (data && data.error && (data.error.message || data.error)) || "";
+      const hint = resp.status === 401 || resp.status === 403 ? "API Key 被拒绝，请在设置里检查"
+        : resp.status === 404 ? "接口地址不对，请检查是否需要带 /v1"
+          : resp.status === 429 ? "请求太频繁或额度不足，稍后再试"
+            : "接口返回错误";
+      const err = new Error(hint + "（HTTP " + resp.status + "）" + (raw ? "：" + String(raw).slice(0, 160) : ""));
+      err.isApiError = true;
+      throw err;
+    }
+    const choice = data && data.choices && data.choices[0];
+    if (!choice) throw new Error("接口返回结构不符合预期");
+    return (choice.message && choice.message.content) || "";
+  },
+
+  async grade(subs, rubric, onProgress) {
+    const rubricJson = JSON.stringify(rubric);
+    const cfg = this._cfg();
+    const mock = !(cfg.api_key && cfg.api_key.length > 8);
+    if (mock) {
+      const out = JSON.parse(this.B.mock_grade(JSON.stringify(subs), rubricJson));
+      if (onProgress) onProgress(out.results.length, out.results.length, 0);
+      return { results: out.results, mode: "mock" };
+    }
+
+    const prep = JSON.parse(this.B.prepare_grade(JSON.stringify(subs), rubricJson));
+    const items = prep.items || [];
+    const results = new Array(items.length);
+    let done = 0;
+    const total = items.length;
+    const limit = Math.max(1, Math.min(Number(cfg.concurrency) || 3, 8));
+    let cursor = 0;
+
+    const worker = async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= total) return;
+        const item = items[i];
+        const itemJson = JSON.stringify(item);
+        try {
+          const reply = await this._callLLM(item.messages, cfg);
+          results[i] = JSON.parse(this.B.finish_grade(itemJson, reply, rubricJson)).result;
+        } catch (e) {
+          results[i] = JSON.parse(this.B.fail_grade(itemJson, e.message || String(e), rubricJson)).result;
+        }
+        done += 1;
+        if (onProgress) onProgress(done, total, null);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, total) }, worker));
+    return { results, mode: "live" };
+  },
+
+  async exportFile(payload) {
+    const resultsJson = JSON.stringify(payload.results || []);
+    const rubricJson = JSON.stringify(payload.rubric || {});
+    const class_name = payload.class_name || "";
+    if (this.exportOk) {
+      const b64 = this.B.export_b64(resultsJson, rubricJson, class_name, !!payload.mock);
+      const name = this.B.export_name(rubricJson, class_name);
+      return {
+        blob: b64ToBlob(b64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        filename: name
+      };
+    }
+    const csv = this.B.export_fallback_csv(resultsJson, rubricJson, !!payload.mock);
+    const name = this.B.export_name(rubricJson, class_name).replace(/\.xlsx$/, ".csv");
+    return { blob: new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }), filename: name, csvFallback: true };
+  },
+
+  async quit() { }
+};
+
+let backend = httpBackend;
+
+async function detectBackend(onStage) {
+  try {
+    const resp = await fetch("api/health", { cache: "no-store" });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.ok && data.version) { backend = httpBackend; return backend.id; }
+    }
+  } catch (e) { /* 没有本地服务，走在线版 */ }
+  backend = pyBackend;
+  await pyBackend.init(onStage);
+  return backend.id;
+}
 function setStep(n) {
   state.step = n;
   $$("#steps .step").forEach(el => {
@@ -552,8 +833,7 @@ function setStep(n) {
 
 /* ---------------- 配置 ---------------- */
 async function loadConfig() {
-  const data = await api("/api/config");
-  state.config = data.config;
+  state.config = await backend.getConfig();
   renderMode();
   return state.config;
 }
@@ -570,6 +850,7 @@ function renderMode() {
   $("#gradeHint").textContent = c.mode === "live"
     ? "会用 " + (c.model || "大模型") + " 逐份评阅，请耐心等待"
     : "当前是演示模式，会给出占位分数，配置 API Key 后可重新打分";
+  if (!backend.canQuit) $("#btnQuit").style.display = "none";
 }
 function openDrawer() {
   const c = state.config || {};
@@ -582,9 +863,12 @@ function openDrawer() {
   $("#cfgTimeout").value = c.timeout || 90;
   $("#cfgPath").textContent = c.config_path || "";
   $("#keyNotice").className = "notice " + (c.has_api_key ? "ok" : "warn");
+  const where = c.online
+    ? "只保存在<b>你自己的浏览器</b>里，直接发给大模型服务商，不经过任何第三方服务器。"
+    : "保存在程序旁边的 <span class='code'>config.ini</span> 里，不会上传到任何地方。";
   $("#keyNotice").innerHTML = c.has_api_key
-    ? "已经配置好 API Key，可以真实打分。"
-    : "还没配置 API Key，现在只能用<b>演示模式</b>（给出占位分数，用来验证流程）。填入 Key 后即可真实评阅。";
+    ? "已经配置好 API Key，可以真实打分。" + where
+    : "还没配置 API Key，现在只能用<b>演示模式</b>（给出占位分数，用来验证流程）。填入 Key 后即可真实评阅。" + where;
   $("#drawer").classList.add("on");
   $("#scrim").classList.add("on");
 }
@@ -696,8 +980,7 @@ function bindRubric() {
   };
   $("#btnResetRubric").onclick = async () => {
     if (!confirm("把评分规则恢复成默认的「观点理解5 / 个人思考3 / 文字表达2」？")) return;
-    const data = await api("/api/rubric");
-    state.rubric = data.rubric;
+    state.rubric = await backend.getRubric();
     renderRubric();
   };
   $$("[data-act=del-crit]", box).forEach(btn => btn.onclick = () => {
@@ -721,7 +1004,7 @@ async function doParse() {
   const btn = $("#btnParse"); btn.disabled = true; btn.textContent = "解析中…";
   try {
     state.rubric = collectRubric();
-    const data = await api("/api/parse", {
+    const data = await backend.parse({
       chat_text, roster_text: $("#rosterText").value,
       exclude_names: $("#excludeNames").value,
       min_chars: Number($("#minChars").value || 15),
@@ -798,40 +1081,41 @@ async function doGrade() {
   if (!state.submissions.length) { toast("清单是空的", "err"); return; }
   try {
     state.rubric = collectRubric();
-    const data = await api("/api/grade", {
-      submissions: state.submissions, rubric: state.rubric, mode: null
-    });
-    state.jobId = data.job_id;
-    state.mock = data.mode !== "live";
-    setStep(3);
-    $("#gradeTitle").textContent = state.mock ? "正在用演示模式生成占位分数…" : "正在把心得交给大模型评阅…";
-    $("#gradeSub").textContent = state.mock
-      ? "演示模式不联网，只是为了让你把流程走通；配置 API Key 后可以重新打分。"
-      : "每份心得都会独立评阅，并和同批次其他同学做雷同比对。请勿关闭窗口。";
-    pollJob();
   } catch (e) {
-    toast(e.message, "err");
+    toast("评分规则有问题：" + e.message, "err");
+    return;
   }
-}
-async function pollJob() {
+  setStep(3);
+  const willMock = (state.config || {}).mode !== "live";
+  $("#gradeTitle").textContent = willMock
+    ? "正在用演示模式生成占位分数…"
+    : "正在把心得交给大模型评阅…";
+  $("#gradeSub").textContent = willMock
+    ? "演示模式不联网，只是为了让你把流程走通；配置 API Key 后可以重新打分。"
+    : "每份心得都会独立评阅，并和同批次其他同学做雷同比对。请勿关闭页面。";
+  $("#gradeBar").style.width = "0%";
+  $("#gradeCount").textContent = "0 / " + state.submissions.length;
+  $("#gradeElapsed").textContent = "";
+
   const t0 = Date.now();
-  const tick = async () => {
-    let snap;
-    try {
-      snap = await api("/api/grade/status?job_id=" + encodeURIComponent(state.jobId));
-    } catch (e) { toast(e.message, "err"); return; }
-    const pct = snap.total ? Math.round(snap.done / snap.total * 100) : 0;
-    $("#gradeBar").style.width = pct + "%";
-    $("#gradeCount").textContent = snap.done + " / " + snap.total;
-    $("#gradeElapsed").textContent = "已用 " + snap.elapsed + " 秒";
-    if (snap.state === "running") { setTimeout(tick, 500); return; }
-    if (snap.state === "error") { toast("打分失败：" + (snap.error || "未知错误"), "err"); setStep(2); return; }
-    state.results = snap.results || [];
+  try {
+    const out = await backend.grade(state.submissions, state.rubric, (done, total, elapsed) => {
+      $("#gradeBar").style.width = (total ? Math.round(done / total * 100) : 0) + "%";
+      $("#gradeCount").textContent = done + " / " + total;
+      const secs = elapsed != null ? elapsed : Math.round((Date.now() - t0) / 1000);
+      $("#gradeElapsed").textContent = "已用 " + secs + " 秒";
+    });
+    state.results = out.results || [];
+    state.mock = out.mode !== "live";
     renderResults();
     setStep(4);
-    toast("打分完成，共 " + state.results.length + " 份", "ok");
-  };
-  tick();
+    const failed = state.results.filter(r => r.error).length;
+    toast(failed ? ("打分完成，" + failed + " 份失败，可点「重新打分」再试")
+      : ("打分完成，共 " + state.results.length + " 份"), failed ? "err" : "ok");
+  } catch (e) {
+    toast(e.message, "err");
+    setStep(2);
+  }
 }
 
 /* ---------------- 结果 ---------------- */
@@ -971,35 +1255,52 @@ function detailRow(r, i, criteria) {
 }
 
 /* ---------------- 导出 ---------------- */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
 async function doExport() {
   const btn = $("#btnExport"); btn.disabled = true;
   try {
-    const payload = {
+    const out = await backend.exportFile({
       results: state.results, rubric: collectRubric(),
       class_name: (state.config || {}).class_name || "", mock: state.mock
-    };
-    const resp = await fetch("/api/export", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
     });
-    if (!resp.ok) {
-      let msg = "导出失败（HTTP " + resp.status + "）";
-      try { const j = await resp.json(); if (j.error) msg = j.error; } catch (e) { }
-      throw new Error(msg);
-    }
-    const blob = await resp.blob();
-    let name = "课堂心得成绩.xlsx";
-    const enc = resp.headers.get("X-Filename-Encoded");
-    if (enc) { try { name = decodeURIComponent(enc); } catch (e) { } }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = name; document.body.appendChild(a); a.click();
-    document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 4000);
-    toast("已导出：" + name, "ok");
+    downloadBlob(out.blob, out.filename);
+    toast((out.csvFallback ? "已导出 CSV（Excel 可直接打开）：" : "已导出：") + out.filename, "ok");
   } catch (e) {
     toast(e.message, "err");
   } finally {
     btn.disabled = false;
   }
+}
+
+function renderBanners(backendId) {
+  const c = state.config || {};
+  const parts = [];
+  const ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>';
+  const WARN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
+
+  if (backendId === "pyodide") {
+    parts.push(`<div class="notice ok">${ICON}<div><b>在线版</b>：整个程序（解析、打分、导出）
+      都在你自己的浏览器里运行，<b>没有服务器</b>。API Key 只存在你的浏览器本地，
+      直接用浏览器发给大模型服务商，不经过任何第三方。第一次打开需要下载约 10MB 的
+      Python 运行时，之后会走缓存。</div></div>`);
+  }
+  if (c.mode !== "live") {
+    parts.push(`<div class="notice warn">${WARN}<div>当前是<b>演示模式</b>：没有配置 API Key，
+      打分只会给出占位分数（用来验证流程）。点右上角「设置」填入 API Key 后即可真实评阅。</div></div>`);
+  }
+  if (backendId === "pyodide" && c.export_available === false) {
+    parts.push(`<div class="notice warn">${WARN}<div>浏览器里没能装上 Excel 组件，
+      「导出」会退化成 CSV 文件（Excel 一样能直接打开）。</div></div>`);
+  }
+  $("#banner").innerHTML = parts.join("");
 }
 
 /* ---------------- 事件绑定 ---------------- */
@@ -1032,7 +1333,7 @@ function bindAll() {
   $("#scrim").onclick = closeDrawer;
   $("#btnCfgSave").onclick = async () => {
     try {
-      const data = await api("/api/config", {
+      state.config = await backend.saveConfig({
         api_key: $("#cfgKey").value.trim(),
         base_url: $("#cfgBase").value.trim(),
         model: $("#cfgModel").value.trim(),
@@ -1040,7 +1341,6 @@ function bindAll() {
         concurrency: Number($("#cfgConc").value || 4),
         timeout: Number($("#cfgTimeout").value || 90)
       });
-      state.config = data.config;
       renderMode();
       closeDrawer();
       toast("设置已保存", "ok");
@@ -1048,7 +1348,7 @@ function bindAll() {
   };
   $("#btnQuit").onclick = async () => {
     if (!confirm("确定要退出程序吗？")) return;
-    try { await api("/api/shutdown", {}); } catch (e) { }
+    await backend.quit();
     document.body.innerHTML =
       '<div style="padding:80px;text-align:center;font-family:system-ui">' +
       '<h2>程序已退出</h2><p style="color:#8A8178">现在可以关闭这个页面了。</p></div>';
@@ -1057,29 +1357,32 @@ function bindAll() {
 
 (async function init() {
   bindAll();
+  const bootText = $("#bootText");
   try {
+    const backendId = await detectBackend(t => { bootText.textContent = t; });
+    state.backendId = backendId;
     await loadConfig();
-    const data = await api("/api/rubric");
-    state.rubric = data.rubric;
+    state.rubric = await backend.getRubric();
     renderRubric();
-    if ((state.config || {}).mode !== "live") {
-      $("#banner").innerHTML = '<div class="notice warn">' +
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' +
-        '<div>当前是<b>演示模式</b>：没有配置 API Key，打分只会给出占位分数（用来验证流程）。' +
-        '点右上角「设置」填入 API Key 后即可真实评阅。</div></div>';
-    }
-    // 一键演示：地址后面加 ?demo=1 会自动填示例并跑完一遍
-    if (new URLSearchParams(location.search).has("demo")) {
+    renderBanners(backendId);
+
+    // 一键演示：地址后面加 ?demo=1 会自动填示例并把流程跑完
+    const params = new URLSearchParams(location.search);
+    if (params.has("demo")) {
       $("#chatText").value = SAMPLE_CHAT;
       $("#charCount").textContent = SAMPLE_CHAT.length + " 字";
       await doParse();
       await doGrade();
-      if (new URLSearchParams(location.search).has("expand")) {
+      if (params.has("expand")) {
         state.expanded[0] = true;
         renderResults();
       }
     }
+    $("#boot").classList.add("gone");
+    setTimeout(() => { const b = $("#boot"); if (b) b.style.display = "none"; }, 400);
   } catch (e) {
+    bootText.innerHTML = "启动失败：" + esc(e.message) +
+      "<br><br>如果是网络问题，刷新页面重试即可。";
     toast("初始化失败：" + e.message, "err");
   }
 })();
