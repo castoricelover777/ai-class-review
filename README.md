@@ -1,9 +1,10 @@
 # AI 辅助课堂心得评阅与打分
 
 [![tests](https://github.com/castoricelover777/ai-class-review/actions/workflows/tests.yml/badge.svg)](https://github.com/castoricelover777/ai-class-review/actions/workflows/tests.yml)
+[![在线试用](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E8%AF%95%E7%94%A8-%E7%82%B9%E8%BF%99%E9%87%8C-A63A2E.svg)](https://castoricelover777.github.io/ai-class-review/)
 [![license](https://img.shields.io/badge/license-MIT-A63A2E.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.11%2B-1C1917.svg)](#从源码运行)
-[![deps](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-1%20%E4%B8%AA-3F6B4A.svg)](#为什么依赖这么少)
+[![deps](https://img.shields.io/badge/%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-1%20%E4%B8%AA-3F6B4A.svg)](#为什么这么选型)
 
 学生把课堂心得发在微信群里 → 老师粘贴群聊记录 → 自动拆出「谁写了什么」→
 调用大模型按可配置规则逐维度打分（含**防抄袭 / 防 AI 代写**判定）→
@@ -25,7 +26,10 @@
 
 - **API Key 只存在你自己的浏览器里**，由浏览器直接发给大模型服务商，不经过任何第三方服务器
 - 没配 Key 也能玩：点「填入示例」→「开始 AI 打分」，会走**演示模式**（占位分数）
-- 第一次打开要下载约 10MB 的 Python 运行时，之后走浏览器缓存
+- 第一次打开要下载约 10MB 的 Python 运行时，之后走浏览器缓存；本站点本身只有 430KB
+- 整个在线版只依赖两样东西：**本站点 + Pyodide 运行时**。
+  连导出 Excel 用的 openpyxl 都打进了站点的 `vendor.zip`（244KB）而不是去 PyPI 现装——
+  否则网络一抖，页面就会卡在启动界面不动（这个坑已经踩过一次，见提交历史）
 
 > 在线版和 exe 版**共用同一份核心代码**，不存在"网页版改了、exe 版忘了改"的问题。
 > `tests/test_bridge.py` 里有用例专门盯着两者：Prompt 必须逐字一致、分数必须相同。
