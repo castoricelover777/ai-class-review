@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课堂心得评阅台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23A63A2E'/%3E%3Cpath d='M9 22V9h11M9 15h8' stroke='%23F7F5F1' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --paper:#F7F5F1;
+  --card:#FFFFFF;
+  --ink:#1C1917;
+  --ink-2:#57534E;
+  --ink-3:#8A8178;
+  --line:#E5E0D8;
+  --line-2:#D3CCC1;
+  --seal:#A63A2E;
+  --seal-dark:#8A2F25;
+  --seal-soft:#FBEFEC;
+  --amber:#B45309;
+  --amber-soft:#FDF4E3;
+  --moss:#3F6B4A;
+  --moss-soft:#EDF3ED;
+  --shadow:0 1px 2px rgba(28,25,23,.05), 0 8px 24px -12px rgba(28,25,23,.18);
+  --mono:"Cascadia Mono","SF Mono",Consolas,"Liberation Mono",ui-monospace,monospace;
+  --sans:"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased;
+}
+button,input,textarea,select{font-family:inherit;font-size:inherit;color:inherit}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------------- 顶栏 ---------------- */
+header{
+  position:sticky;top:0;z-index:40;background:rgba(247,245,241,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+}
+.hwrap{max-width:1480px;margin:0 auto;padding:12px 28px;display:flex;align-items:center;gap:14px}
+.logo{
+  width:32px;height:32px;border-radius:8px;background:var(--seal);flex:none;
+  display:flex;align-items:center;justify-content:center;
+}
+.logo svg{display:block}
+.titles h1{font-size:16px;line-height:1.2}
+.titles p{margin:0;font-size:11.5px;color:var(--ink-3);letter-spacing:.02em}
+.spacer{flex:1}
+.badge{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;
+  font-size:12px;border:1px solid var(--line-2);background:var(--card);white-space:nowrap;
+}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);flex:none}
+.badge.live{border-color:#CDE0D2;background:var(--moss-soft);color:var(--moss)}
+.badge.live .dot{background:var(--moss)}
+.badge.mock{border-color:#EBD9B4;background:var(--amber-soft);color:var(--amber)}
+.badge.mock .dot{background:var(--amber)}
+
+/* ---------------- 按钮 ---------------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:8px 15px;border-radius:8px;border:1px solid var(--line-2);
+  background:var(--card);cursor:pointer;font-size:13.5px;font-weight:500;
+  transition:background .13s,border-color .13s,transform .06s;white-space:nowrap;
+}
+.btn:hover{background:#FBF9F6;border-color:var(--ink-3)}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--seal);border-color:var(--seal);color:#fff}
+.btn.primary:hover{background:var(--seal-dark);border-color:var(--seal-dark)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.ghost:hover{background:#EFEBE4;border-color:transparent}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn svg{flex:none}
+
+/* ---------------- 步骤条 ---------------- */
+.steps{max-width:1480px;margin:0 auto;padding:16px 28px 0;display:flex;align-items:center;gap:0}
+.step{display:flex;align-items:center;gap:9px;color:var(--ink-3);font-size:13px;cursor:default;padding:2px 0}
+.step .idx{
+  width:23px;height:23px;border-radius:50%;border:1.5px solid var(--line-2);
+  display:flex;align-items:center;justify-content:center;font-size:12px;
+  font-family:var(--mono);background:var(--card);flex:none;
+}
+.step.done{color:var(--moss);cursor:pointer}
+.step.done .idx{border-color:var(--moss);background:var(--moss);color:#fff}
+.step.active{color:var(--ink);font-weight:600}
+.step.active .idx{border-color:var(--seal);color:var(--seal);box-shadow:0 0 0 3px var(--seal-soft)}
+.step .bar{width:64px;height:1px;background:var(--line-2);margin:0 14px;flex:none}
+
+/* ---------------- 主体 ---------------- */
+main{max-width:1480px;margin:0 auto;padding:18px 28px 80px}
+.panel{display:none}
+.panel.on{display:block;animation:fade .18s ease-out}
+@keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+.grid{display:grid;gap:16px;align-items:start}
+.g-2{grid-template-columns:minmax(0,1.75fr) minmax(320px,1fr)}
+@media(max-width:1080px){.g-2{grid-template-columns:1fr}}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.card > .hd{
+  padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;
+}
+.card > .hd h2{font-size:13.5px}
+.card > .hd .hint{font-size:12px;color:var(--ink-3);font-weight:400}
+.card > .bd{padding:16px}
+.card > .ft{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+
+.kicker{
+  font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:600;
+}
+label.fld{display:block;margin-bottom:6px;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.hintline{font-size:12px;color:var(--ink-3);margin-top:6px;line-height:1.6}
+
+textarea,input[type=text],input[type=number],input[type=password],select{
+  width:100%;padding:9px 11px;border:1px solid var(--line-2);border-radius:8px;background:#FEFDFB;
+  outline:none;transition:border-color .13s,box-shadow .13s;
+}
+textarea:focus,input:focus,select:focus{border-color:var(--seal);box-shadow:0 0 0 3px var(--seal-soft);background:#fff}
+textarea{resize:vertical;line-height:1.7}
+textarea.chat{min-height:280px;font-family:var(--mono);font-size:12.5px;line-height:1.75}
+textarea.roster{min-height:118px;font-family:var(--mono);font-size:12.5px}
+
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row.tight{gap:8px}
+.field-inline{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);white-space:nowrap}
+.field-inline input[type=number]{width:82px}
+
+details{border:1px solid var(--line);border-radius:9px;background:#FCFBF9;overflow:hidden}
+details+details{margin-top:10px}
+details > summary{
+  padding:11px 14px;cursor:pointer;font-size:13px;font-weight:600;list-style:none;
+  display:flex;align-items:center;gap:8px;color:var(--ink-2);
+}
+details > summary::-webkit-details-marker{display:none}
+details > summary::before{
+  content:"";width:5px;height:5px;border-right:1.5px solid var(--ink-3);border-bottom:1.5px solid var(--ink-3);
+  transform:rotate(-45deg);transition:transform .15s;margin-left:2px;flex:none;
+}
+details[open] > summary::before{transform:rotate(45deg)}
+details > summary .cnt{color:var(--ink-3);font-weight:400;font-size:12px}
+details .body{padding:0 14px 14px}
+
+/* ---------------- 维度编辑 ---------------- */
+.crit{border:1px solid var(--line);border-radius:9px;padding:12px;background:#fff;margin-bottom:10px}
+.crit .top{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+.crit .top input[name=cname]{max-width:240px;font-weight:600}
+.crit .top .mx{width:74px}
+.crit .top .del{margin-left:auto}
+.crit .lv{display:grid;grid-template-columns:96px 74px minmax(0,1fr);gap:8px;align-items:center;margin-bottom:6px}
+@media(max-width:720px){.crit .lv{grid-template-columns:1fr}}
+.crit .lv input{padding:6px 9px;font-size:12.5px}
+.crit .lv .pct{position:relative}
+.crit .lv .pct::after{content:"%";position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--ink-3);font-size:11px}
+.crit .lv .pct input{padding-right:24px;text-align:right;font-family:var(--mono)}
+.crit textarea{min-height:52px;font-size:12.5px}
+.lvhead{display:grid;grid-template-columns:96px 74px minmax(0,1fr);gap:8px;font-size:11px;color:var(--ink-3);margin-bottom:4px;font-weight:600;letter-spacing:.04em}
+.iconbtn{
+  width:26px;height:26px;border-radius:6px;border:1px solid var(--line-2);background:#fff;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;color:var(--ink-3);flex:none;
+}
+.iconbtn:hover{color:var(--seal);border-color:var(--seal)}
+
+/* ---------------- 表格 ---------------- */
+.tblwrap{overflow:auto;border-top:1px solid var(--line)}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+th{
+  position:sticky;top:0;z-index:2;background:#FBFAF8;text-align:left;font-size:11.5px;font-weight:600;
+  color:var(--ink-2);letter-spacing:.03em;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap;
+}
+td{padding:8px 10px;border-bottom:1px solid #F1EEE9;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#FCFBF9}
+td.c,th.c{text-align:center}
+td.name{font-weight:600;white-space:nowrap}
+td .raw{display:block;font-size:11px;color:var(--ink-3);font-weight:400}
+.chip{
+  display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;line-height:1.7;
+  background:#F1EEE9;color:var(--ink-2);white-space:nowrap;
+}
+.chip.warn{background:var(--amber-soft);color:var(--amber)}
+.chip.bad{background:var(--seal-soft);color:var(--seal)}
+.chip.ok{background:var(--moss-soft);color:var(--moss)}
+.score-in{
+  width:64px;padding:4px 7px;text-align:center;font-family:var(--mono);font-size:13px;
+  border:1px solid var(--line-2);border-radius:6px;background:#FEFDFB;
+}
+.score-in:focus{background:#fff}
+.score-in.edited{border-color:var(--seal);background:var(--seal-soft)}
+td .band{display:block;font-size:10.5px;color:var(--ink-3);margin-top:2px;text-align:center}
+.total{font-family:var(--mono);font-size:16px;font-weight:600}
+.riskbar{width:3px;border-radius:2px;align-self:stretch;display:block}
+td.risk{white-space:nowrap}
+td.risk .lvl{display:flex;align-items:center;gap:6px}
+.risk-dot{width:7px;height:7px;border-radius:50%;flex:none}
+tr.risky{background:#FFFCF9}
+tr.risky:hover{background:#FFF8F5}
+textarea.cmt{min-height:44px;font-size:12.5px}
+textarea.cmt.big{min-height:64px}
+
+/* ---------------- 空状态 / 提示 ---------------- */
+.empty{padding:46px 20px;text-align:center;color:var(--ink-3)}
+.empty .big{font-size:15px;color:var(--ink-2);margin-bottom:6px;font-weight:600}
+.empty svg{opacity:.35;margin-bottom:10px}
+.notice{
+  display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:9px;font-size:13px;
+  border:1px solid var(--line);background:#FCFBF9;margin-bottom:14px;
+}
+.notice.warn{border-color:#EBD9B4;background:var(--amber-soft);color:#7A4A08}
+.notice.bad{border-color:#EBC9C3;background:var(--seal-soft);color:#7E2C22}
+.notice.ok{border-color:#CDE0D2;background:var(--moss-soft);color:#2F5438}
+.notice svg{flex:none;margin-top:1px}
+
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.stat{border:1px solid var(--line);border-radius:9px;padding:8px 13px;background:#fff;min-width:92px}
+.stat .k{font-size:11px;color:var(--ink-3)}
+.stat .v{font-size:19px;font-weight:600;font-family:var(--mono);line-height:1.3}
+
+/* ---------------- 进度 ---------------- */
+.progress{height:6px;background:#EDEAE4;border-radius:99px;overflow:hidden;margin:14px 0 8px}
+.progress .bar{height:100%;background:var(--seal);width:0;transition:width .3s ease;border-radius:99px}
+.spin{animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------------- 抽屉 / 弹层 ---------------- */
+.scrim{position:fixed;inset:0;background:rgba(28,25,23,.32);opacity:0;pointer-events:none;transition:opacity .18s;z-index:60}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{
+  position:fixed;top:0;right:0;bottom:0;width:420px;max-width:92vw;background:var(--card);z-index:61;
+  transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;
+  box-shadow:-16px 0 40px -20px rgba(28,25,23,.4);
+}
+.drawer.on{transform:none}
+.drawer .hd{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.drawer .bd{padding:18px 20px;overflow:auto;flex:1}
+.drawer .ft{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+.form-row{margin-bottom:16px}
+.code{font-family:var(--mono);font-size:11.5px;background:#F5F2ED;padding:2px 6px;border-radius:5px;color:var(--ink-2)}
+
+#toast{
+  position:fixed;left:50%;bottom:34px;transform:translate(-50%,16px);z-index:90;opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;max-width:min(620px,92vw);
+}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#toast .box{
+  background:var(--ink);color:#F7F5F1;padding:11px 18px;border-radius:9px;font-size:13.5px;
+  box-shadow:0 12px 30px -10px rgba(28,25,23,.5);
+}
+#toast.err .box{background:var(--seal)}
+#toast.ok .box{background:var(--moss)}
+
+.detail{background:#FCFBF9}
+.detail td{padding:0}
+.detail-inner{padding:14px 16px 18px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:18px}
+@media(max-width:900px){.detail-inner{grid-template-columns:1fr}}
+.detail h4{margin:0 0 7px;font-size:12px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase}
+.detail .quote{
+  border-left:2px solid var(--line-2);padding:2px 0 2px 11px;color:var(--ink-2);font-size:12.5px;
+  margin-bottom:8px;white-space:pre-wrap;word-break:break-word;
+}
+.detail .quote.warnq{border-color:var(--seal);background:var(--seal-soft)}
+.detail .essay{
+  background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-size:12.5px;
+  white-space:pre-wrap;max-height:280px;overflow:auto;line-height:1.75;
+}
+.meter{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:5px}
+.meter .track{flex:1;height:5px;background:#EDEAE4;border-radius:99px;overflow:hidden}
+.meter .fill{height:100%;border-radius:99px;background:var(--seal)}
+.footer-note{text-align:center;color:var(--ink-3);font-size:12px;padding:24px 0 0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hwrap">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F7F5F1" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12.5l5.2 5.2L20 6.6"/>
+      </svg>
+    </div>
+    <div class="titles">
+      <h1>课堂心得评阅台</h1>
+      <p>AI 辅助打分 · 老师人工复核</p>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="modeBadge"><span class="dot"></span><span id="modeText">读取中…</span></span>
+    <button class="btn ghost sm" id="btnSettings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>
+      设置
+    </button>
+    <button class="btn ghost sm" id="btnQuit">退出程序</button>
+  </div>
+</header>
+
+<nav class="steps" id="steps">
+  <div class="step" data-step="1"><span class="idx">1</span>粘贴群聊记录</div>
+  <span class="bar"></span>
+  <div class="step" data-step="2"><span class="idx">2</span>核对名单</div>
+  <span class="bar"></span>
+  <div class="step" data-step="3"><span class="idx">3</span>AI 打分</div>
+  <span class="bar"></span>
+  <div class="step" data-step="4"><span class="idx">4</span>复核并导出</div>
+</nav>
+
+<main>
+  <div id="banner"></div>
+
+  <!-- ============ 第 1 步 ============ -->
+  <section class="panel on" id="panel-1">
+    <div class="grid g-2">
+      <div class="card">
+        <div class="hd">
+          <h2>粘贴群聊记录</h2>
+          <span class="hint">在微信里长按选中消息 → 复制 → 粘贴到这里</span>
+        </div>
+        <div class="bd">
+          <textarea id="chatText" class="chat" placeholder="把微信群里复制的聊天记录整段粘贴到这里，例如：
+
+张三
+2026年09月26日 20:15
+今天的课让我理解了三次握手的必要性……
+
+会自动识别昵称、时间、正文，并合并同一个人的多条发言。"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button class="btn sm" id="btnSample">填入示例</button>
+            <button class="btn sm ghost" id="btnClear">清空</button>
+            <div class="spacer"></div>
+            <span class="hintline" id="charCount">0 字</span>
+          </div>
+        </div>
+        <div class="ft">
+          <button class="btn primary" id="btnParse">
+            解析预览
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+          <span class="hintline">先解析、核对无误后再打分，避免把闲聊也算进成绩</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="hd"><h2>学生名单</h2><span class="hint">可选，但强烈建议填</span></div>
+          <div class="bd">
+            <textarea id="rosterText" class="roster" placeholder="姓名,学号,群昵称
+张三,2023123456,赢赢
+李四,2023123457,logic"></textarea>
+            <div class="hintline">
+              直接在 Excel 里选中两列复制粘贴即可（列顺序随意，带表头）。<br>
+              作用：把群昵称换成真名、带上学号，并且减少昵称识别错误。
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="hd"><h2>解析设置</h2></div>
+          <div class="bd">
+            <div class="row tight" style="margin-bottom:14px">
+              <span class="field-inline">少于
+                <input type="number" id="minChars" value="15" min="0" max="500">
+                字标记为过短</span>
+            </div>
+            <div class="form-row" style="margin-bottom:14px">
+              <label class="fld">不参与评分的人（老师、助教）</label>
+              <input type="text" id="excludeNames" placeholder="老师,助教，用逗号分隔">
+            </div>
+            <label class="field-inline" style="cursor:pointer">
+              <input type="checkbox" id="strictNames" style="width:auto">
+              只认名单里的人发言（闲聊多时很有用）
+            </label>
+          </div>
+          <div class="ft">
+            <button class="btn sm" id="btnRulesToggle">编辑评分规则</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="hd"><h2>评分规则</h2><span class="hint" id="rubricSummary"></span></div>
+      <div class="bd" id="rubricBody"></div>
+    </div>
+  </section>
+
+  <!-- ============ 第 2 步 ============ -->
+  <section class="panel" id="panel-2">
+    <div class="card">
+      <div class="hd">
+        <h2>核对待评阅清单</h2>
+        <span class="hint">姓名可以直接改，不需要的行可以删掉</span>
+        <div class="spacer"></div>
+        <button class="btn sm ghost" id="btnBack1">← 重新粘贴</button>
+      </div>
+      <div class="bd" id="parseStats"></div>
+      <div class="tblwrap" id="previewWrap"></div>
+      <div class="ft">
+        <button class="btn primary" id="btnGrade">
+          开始 AI 打分
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+        <span class="hintline" id="gradeHint"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 第 3 步 ============ -->
+  <section class="panel" id="panel-3">
+    <div class="card">
+      <div class="bd">
+        <div class="row"><span class="kicker" id="gradeStage">正在评阅</span></div>
+        <h2 style="font-size:20px;margin:8px 0 2px" id="gradeTitle">正在把心得交给大模型…</h2>
+        <p class="hintline" id="gradeSub"></p>
+        <div class="progress"><div class="bar" id="gradeBar"></div></div>
+        <div class="row" style="justify-content:space-between">
+          <span class="hintline num" id="gradeCount">0 / 0</span>
+          <span class="hintline" id="gradeElapsed"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 第 4 步 ============ -->
+  <section class="panel" id="panel-4">
+    <div class="card">
+      <div class="hd">
+        <h2>评阅结果</h2>
+        <span class="hint">分数可以直接改，改完点「导出 Excel」</span>
+        <div class="spacer"></div>
+        <button class="btn sm ghost" id="btnBack2">← 返回清单</button>
+      </div>
+      <div class="bd" id="resultStats"></div>
+      <div class="tblwrap" id="resultWrap"></div>
+      <div class="ft">
+        <button class="btn primary" id="btnExport">
+          导出 Excel
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+        </button>
+        <button class="btn sm" id="btnRegrade">重新打分</button>
+        <div class="spacer"></div>
+        <label class="field-inline" style="cursor:pointer"><input type="checkbox" id="markReviewed" style="width:auto"> 标记为已全部复核</label>
+      </div>
+    </div>
+    <p class="footer-note">分数由 AI 给出，仅作参考；最终成绩以老师的判断为准。</p>
+  </section>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="hd"><h2 style="font-size:15px">设置</h2><div class="spacer"></div><button class="btn ghost sm" id="btnDrawerClose">关闭</button></div>
+  <div class="bd">
+    <div class="notice" id="keyNotice"></div>
+    <div class="form-row">
+      <label class="fld">API Key</label>
+      <input type="password" id="cfgKey" placeholder="粘贴你的 API Key">
+      <div class="hintline">保存在程序旁边的 <span class="code">config.ini</span> 里，不会上传到任何地方。留空即为「演示模式」。</div>
+    </div>
+    <div class="form-row">
+      <label class="fld">接口地址</label>
+      <input type="text" id="cfgBase" placeholder="https://api.deepseek.com/v1">
+    </div>
+    <div class="form-row">
+      <label class="fld">模型名</label>
+      <input type="text" id="cfgModel" placeholder="deepseek-chat">
+    </div>
+    <div class="form-row">
+      <label class="fld">班级名称（会写进成绩表标题和文件名）</label>
+      <input type="text" id="cfgClass" placeholder="计科2201">
+    </div>
+    <div class="row">
+      <div class="field-inline">并发数 <input type="number" id="cfgConc" min="1" max="16"></div>
+      <div class="field-inline">超时（秒） <input type="number" id="cfgTimeout" min="10" max="600"></div>
+    </div>
+    <div class="hintline" style="margin-top:14px">配置文件位置：<br><span class="code" id="cfgPath"></span></div>
+  </div>
+  <div class="ft">
+    <button class="btn" id="btnCfgCancel">取消</button>
+    <button class="btn primary" id="btnCfgSave">保存</button>
+  </div>
+</aside>
+
+<div id="toast"><div class="box" id="toastBox"></div></div>
+
+<script>
+"use strict";
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+
+const state = {
+  step: 1, submissions: [], results: [], rubric: null, config: null,
+  stats: {}, warnings: [], jobId: null, expanded: {}, mock: false
+};
+
+const SAMPLE_CHAT = `张三
+2026年09月26日 20:15
+今天的课让我理解了三次握手的必要性。以前只知道背概念，现在明白了为什么是三次。
+老师举了个打电话的例子，说先问"你在吗"、对方答"在"，然后才说正事，我一下就懂了。
+
+李四
+2026年09月26日 20:20
+我是李四，学号 2023123456。三权分立的核心在于制衡，这让我重新理解了制度设计。
+不过我还是有点疑问：如果三个分支互相扯皮怎么办？课上没来得及问。
+
+王五
+2026年09月26日 20:30
+通过本次课程的学习，我深刻认识到团队合作具有重要意义。首先，我们要不断学习新知识。
+其次，我们要勇于创新。最后，我们要勇于承担责任。总而言之，这次课程让我受益匪浅，
+为我们今后的发展奠定基础，是不可或缺的宝贵财富。
+
+赵敏
+2026年09月26日 20:41
+[图片]`;
+
+/* ---------------- 工具 ---------------- */
+function toast(msg, kind) {
+  const t = $("#toast");
+  $("#toastBox").textContent = msg;
+  t.className = "on " + (kind || "");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => (t.className = ""), kind === "err" ? 6000 : 3200);
+}
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+async function api(path, body) {
+  const opt = body === undefined
+    ? { method: "GET" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const resp = await fetch(path, opt);
+  const ct = resp.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    if (!resp.ok) throw new Error("请求失败（HTTP " + resp.status + "）");
+    return resp;
+  }
+  const data = await resp.json();
+  if (!resp.ok || data.ok === false) throw new Error(data.error || ("请求失败（HTTP " + resp.status + "）"));
+  return data;
+}
+function setStep(n) {
+  state.step = n;
+  $$("#steps .step").forEach(el => {
+    const i = Number(el.dataset.step);
+    el.className = "step" + (i === n ? " active" : (i < n ? " done" : ""));
+    el.onclick = i < n ? () => setStep(i) : null;
+  });
+  $$(".panel").forEach(p => p.classList.toggle("on", p.id === "panel-" + n));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ---------------- 配置 ---------------- */
+async function loadConfig() {
+  const data = await api("/api/config");
+  state.config = data.config;
+  renderMode();
+  return state.config;
+}
+function renderMode() {
+  const c = state.config || {};
+  const badge = $("#modeBadge"), text = $("#modeText");
+  if (c.mode === "live") {
+    badge.className = "badge live";
+    text.textContent = "已接入 " + (c.model || "大模型");
+  } else {
+    badge.className = "badge mock";
+    text.textContent = "演示模式（未配 API Key）";
+  }
+  $("#gradeHint").textContent = c.mode === "live"
+    ? "会用 " + (c.model || "大模型") + " 逐份评阅，请耐心等待"
+    : "当前是演示模式，会给出占位分数，配置 API Key 后可重新打分";
+}
+function openDrawer() {
+  const c = state.config || {};
+  $("#cfgKey").value = "";
+  $("#cfgKey").placeholder = c.has_api_key ? ("已保存：" + (c.api_key_masked || "")) : "粘贴你的 API Key";
+  $("#cfgBase").value = c.base_url || "";
+  $("#cfgModel").value = c.model || "";
+  $("#cfgClass").value = c.class_name || "";
+  $("#cfgConc").value = c.concurrency || 4;
+  $("#cfgTimeout").value = c.timeout || 90;
+  $("#cfgPath").textContent = c.config_path || "";
+  $("#keyNotice").className = "notice " + (c.has_api_key ? "ok" : "warn");
+  $("#keyNotice").innerHTML = c.has_api_key
+    ? "已经配置好 API Key，可以真实打分。"
+    : "还没配置 API Key，现在只能用<b>演示模式</b>（给出占位分数，用来验证流程）。填入 Key 后即可真实评阅。";
+  $("#drawer").classList.add("on");
+  $("#scrim").classList.add("on");
+}
+function closeDrawer() {
+  $("#drawer").classList.remove("on");
+  $("#scrim").classList.remove("on");
+}
+
+/* ---------------- 评分规则编辑 ---------------- */
+function renderRubric() {
+  const r = state.rubric;
+  if (!r) return;
+  $("#rubricSummary").textContent =
+    "总分 " + fmtNum(r.criteria.reduce((s, c) => s + Number(c.max_score || 0), 0)) + " 分 · 共 " +
+    r.criteria.length + " 个维度";
+
+  const parts = [];
+  parts.push(`<div class="crit" style="border-style:dashed;background:#FCFBF9">
+    <div class="form-row" style="margin-bottom:10px">
+      <label class="fld">本次心得的要求 / 课堂背景（会一起交给 AI，写得越具体打分越准）</label>
+      <textarea data-role="context" placeholder="例如：本次课讲的是 TCP 协议，要求学生结合课上讲的实验现象谈理解，不得照抄课件。">${esc(r.context || "")}</textarea>
+    </div>
+    <div class="row tight">
+      <div class="field-inline">字数下限
+        <input type="number" data-role="min_chars" value="${Number(r.min_chars || 0)}" min="0"> 字</div>
+      <div class="field-inline">判定雷同的相似度阈值
+        <input type="number" data-role="similarity_threshold" value="${Math.round((r.similarity_threshold || 0.55) * 100)}" min="10" max="100" style="width:70px"> %</div>
+    </div>
+    <div class="form-row" style="margin:12px 0 0">
+      <label class="fld">AI 使用规定</label>
+      <select data-role="ai_policy">
+        <option value="unknown"${r.ai_policy === "unknown" ? " selected" : ""}>未说明</option>
+        <option value="forbidden"${r.ai_policy === "forbidden" ? " selected" : ""}>本次禁止使用 AI 代写</option>
+        <option value="allowed"${r.ai_policy === "allowed" ? " selected" : ""}>允许使用 AI 辅助</option>
+      </select>
+    </div>
+    <div class="form-row" style="margin:12px 0 0">
+      <label class="fld">给 AI 的额外要求（可选）</label>
+      <textarea data-role="extra_instructions" placeholder="例如：如果学生没有提到课堂上的实验环节，观点理解最多给 3 分。">${esc(r.extra_instructions || "")}</textarea>
+    </div>
+  </div>`);
+
+  const dims = r.criteria.map(c => `${c.name} ${fmtNum(c.max_score)}`).join(" · ");
+  parts.push(`<details class="crit-edit">
+    <summary>编辑评分维度<span class="cnt">（当前：${esc(dims)}）</span></summary>
+    <div class="body">`);
+  r.criteria.forEach((c, i) => {
+    const levels = (c.levels || []).map((lv, j) => `
+      <div class="lv">
+        <input type="text" data-role="lv-label" value="${esc(lv.label)}" placeholder="档位名">
+        <div class="pct"><input type="number" data-role="lv-ratio" value="${Math.round(Number(lv.ratio) * 100)}" min="1" max="100"></div>
+        <input type="text" data-role="lv-desc" value="${esc(lv.description)}" placeholder="这一档是什么样（写得越具体，AI 给分越稳）">
+      </div>`).join("");
+    parts.push(`<div class="crit" data-idx="${i}">
+      <div class="top">
+        <input type="text" data-role="cname" value="${esc(c.name)}" placeholder="维度名称">
+        <span class="field-inline">满分 <input type="number" class="mx" data-role="cmax" value="${Number(c.max_score)}" min="0.5" step="0.5"></span>
+        <button class="iconbtn del" data-act="del-crit" title="删除这个维度">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <input type="text" data-role="cdesc" value="${esc(c.description || "")}" placeholder="这个维度看什么（一句话）" style="margin-bottom:10px">
+      <div class="lvhead"><span>档位</span><span>占满分</span><span>这一档的描述</span></div>
+      ${levels}
+      <button class="btn sm ghost" data-act="add-level" style="margin-top:4px">+ 加一档</button>
+    </div>`);
+  });
+  parts.push(`<button class="btn sm" id="btnAddCrit">+ 添加评分维度</button>
+    <button class="btn sm ghost" id="btnResetRubric" style="margin-left:8px">恢复默认规则</button>
+    </div></details>`);
+  $("#rubricBody").innerHTML = parts.join("");
+  bindRubric();
+}
+function collectRubric() {
+  const r = JSON.parse(JSON.stringify(state.rubric));
+  const box = $("#rubricBody");
+  r.context = $('[data-role=context]', box).value.trim();
+  r.min_chars = Number($('[data-role=min_chars]', box).value || 0);
+  r.similarity_threshold = Number($('[data-role=similarity_threshold]', box).value || 55) / 100;
+  r.ai_policy = $('[data-role=ai_policy]', box).value;
+  r.extra_instructions = $('[data-role=extra_instructions]', box).value.trim();
+  r.criteria = $$(".crit[data-idx]", box).map((el, i) => ({
+    key: (state.rubric.criteria[i] && state.rubric.criteria[i].key) || ("c" + (i + 1)),
+    name: $('[data-role=cname]', el).value.trim() || ("维度" + (i + 1)),
+    max_score: Number($('[data-role=cmax]', el).value || 0),
+    description: $('[data-role=cdesc]', el).value.trim(),
+    levels: $$(".lv", el).map(lv => ({
+      label: $('[data-role=lv-label]', lv).value.trim() || "档位",
+      ratio: Number($('[data-role=lv-ratio]', lv).value || 0) / 100,
+      description: $('[data-role=lv-desc]', lv).value.trim()
+    }))
+  }));
+  r.total = r.criteria.reduce((s, c) => s + c.max_score, 0);
+  return r;
+}
+function bindRubric() {
+  const box = $("#rubricBody");
+  $("#btnAddCrit").onclick = () => {
+    state.rubric = collectRubric();
+    state.rubric.criteria.push({
+      key: "c" + Date.now().toString(36), name: "新维度", max_score: 1, description: "",
+      levels: [
+        { label: "优秀", ratio: 1, description: "" },
+        { label: "良好", ratio: 0.7, description: "" },
+        { label: "待改进", ratio: 0.4, description: "" }
+      ]
+    });
+    renderRubric();
+  };
+  $("#btnResetRubric").onclick = async () => {
+    if (!confirm("把评分规则恢复成默认的「观点理解5 / 个人思考3 / 文字表达2」？")) return;
+    const data = await api("/api/rubric");
+    state.rubric = data.rubric;
+    renderRubric();
+  };
+  $$("[data-act=del-crit]", box).forEach(btn => btn.onclick = () => {
+    const el = btn.closest(".crit");
+    state.rubric = collectRubric();
+    state.rubric.criteria.splice(Number(el.dataset.idx), 1);
+    renderRubric();
+  });
+  $$("[data-act=add-level]", box).forEach(btn => btn.onclick = () => {
+    const el = btn.closest(".crit");
+    state.rubric = collectRubric();
+    state.rubric.criteria[Number(el.dataset.idx)].levels.push({ label: "新档位", ratio: 0.5, description: "" });
+    renderRubric();
+  });
+}
+
+/* ---------------- 解析 ---------------- */
+async function doParse() {
+  const chat_text = $("#chatText").value;
+  if (!chat_text.trim()) { toast("请先粘贴群聊记录", "err"); return; }
+  const btn = $("#btnParse"); btn.disabled = true; btn.textContent = "解析中…";
+  try {
+    state.rubric = collectRubric();
+    const data = await api("/api/parse", {
+      chat_text, roster_text: $("#rosterText").value,
+      exclude_names: $("#excludeNames").value,
+      min_chars: Number($("#minChars").value || 15),
+      strict_names: $("#strictNames").checked
+    });
+    state.submissions = data.submissions;
+    state.stats = data.stats || {};
+    state.warnings = data.warnings || [];
+    state.mock = (state.config || {}).mode !== "live";
+    renderPreview();
+    setStep(2);
+    if (!state.submissions.length) toast("没有解析出任何心得，请检查粘贴的内容", "err");
+  } catch (e) {
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '解析预览 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+  }
+}
+
+const FLAG_TEXT = {
+  no_content: "没交正文", placeholder: "只发了图片/表情", symbol_only: "只有表情",
+  too_short: "字数过短", no_speaker: "没识别出发言人", merged: "多条已合并",
+  resubmitted: "改后重发", alias_guess: "姓名待确认", not_in_roster: "不在名单里"
+};
+
+function renderPreview() {
+  const s = state.stats || {};
+  $("#parseStats").innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="k">待评阅</div><div class="v">${state.submissions.length}</div></div>
+      <div class="stat"><div class="k">识别到发言</div><div class="v">${s.messages || 0}</div></div>
+      <div class="stat"><div class="k">忽略系统提示</div><div class="v">${s.system_dropped || 0}</div></div>
+      <div class="stat"><div class="k">需要确认</div><div class="v">${s.needs_review || 0}</div></div>
+    </div>
+    ${state.warnings.map(w => `<div class="notice">${esc(w)}</div>`).join("")}`;
+
+  if (!state.submissions.length) {
+    $("#previewWrap").innerHTML = `<div class="empty"><div class="big">没有解析到心得</div>
+      请检查粘贴内容里是否包含昵称或时间戳</div>`;
+    return;
+  }
+  const rows = state.submissions.map((it, i) => {
+    const flags = (it.flags || []).map(f =>
+      `<span class="chip ${f === "too_short" || f === "no_content" || f === "placeholder" ? "warn" : ""}">${esc(FLAG_TEXT[f] || f)}</span>`).join(" ");
+    return `<tr data-i="${i}">
+      <td class="c num">${i + 1}</td>
+      <td><input type="text" value="${esc(it.name)}" data-role="pname" style="width:96px;font-weight:600">
+          ${it.raw_name && it.raw_name !== it.name ? `<span class="raw">${esc(it.raw_name)}</span>` : ""}</td>
+      <td class="num">${esc(it.student_id || "—")}</td>
+      <td class="num c">${it.char_count}</td>
+      <td>${flags || '<span class="chip ok">正常</span>'}</td>
+      <td style="max-width:520px"><div style="color:var(--ink-2);font-size:12.5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(it.content || "（没有文字内容）")}</div></td>
+      <td class="c"><button class="iconbtn" data-act="del-row" title="不评这份">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></td>
+    </tr>`;
+  }).join("");
+  $("#previewWrap").innerHTML = `<table><thead><tr>
+      <th class="c" style="width:44px">#</th><th>姓名（可改）</th><th>学号</th><th class="c">字数</th>
+      <th>解析提示</th><th>正文预览</th><th class="c" style="width:44px"></th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+
+  $$("[data-role=pname]").forEach(inp => inp.oninput = e => {
+    state.submissions[Number(e.target.closest("tr").dataset.i)].name = e.target.value;
+  });
+  $$("[data-act=del-row]").forEach(btn => btn.onclick = () => {
+    state.submissions.splice(Number(btn.closest("tr").dataset.i), 1);
+    renderPreview();
+  });
+}
+
+/* ---------------- 打分 ---------------- */
+async function doGrade() {
+  if (!state.submissions.length) { toast("清单是空的", "err"); return; }
+  try {
+    state.rubric = collectRubric();
+    const data = await api("/api/grade", {
+      submissions: state.submissions, rubric: state.rubric, mode: null
+    });
+    state.jobId = data.job_id;
+    state.mock = data.mode !== "live";
+    setStep(3);
+    $("#gradeTitle").textContent = state.mock ? "正在用演示模式生成占位分数…" : "正在把心得交给大模型评阅…";
+    $("#gradeSub").textContent = state.mock
+      ? "演示模式不联网，只是为了让你把流程走通；配置 API Key 后可以重新打分。"
+      : "每份心得都会独立评阅，并和同批次其他同学做雷同比对。请勿关闭窗口。";
+    pollJob();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+}
+async function pollJob() {
+  const t0 = Date.now();
+  const tick = async () => {
+    let snap;
+    try {
+      snap = await api("/api/grade/status?job_id=" + encodeURIComponent(state.jobId));
+    } catch (e) { toast(e.message, "err"); return; }
+    const pct = snap.total ? Math.round(snap.done / snap.total * 100) : 0;
+    $("#gradeBar").style.width = pct + "%";
+    $("#gradeCount").textContent = snap.done + " / " + snap.total;
+    $("#gradeElapsed").textContent = "已用 " + snap.elapsed + " 秒";
+    if (snap.state === "running") { setTimeout(tick, 500); return; }
+    if (snap.state === "error") { toast("打分失败：" + (snap.error || "未知错误"), "err"); setStep(2); return; }
+    state.results = snap.results || [];
+    renderResults();
+    setStep(4);
+    toast("打分完成，共 " + state.results.length + " 份", "ok");
+  };
+  tick();
+}
+
+/* ---------------- 结果 ---------------- */
+const RISK = {
+  none: { t: "正常", c: "var(--moss)", chip: "ok" },
+  low: { t: "轻微可疑", c: "var(--amber)", chip: "warn" },
+  medium: { t: "疑似代写/雷同", c: "var(--amber)", chip: "warn" },
+  high: { t: "高度疑似", c: "var(--seal)", chip: "bad" }
+};
+function fmtNum(n) {
+  const v = Math.round(Number(n) * 100) / 100;
+  return String(v);
+}
+function renderResults() {
+  const rs = state.results;
+  const criteria = (state.rubric && state.rubric.criteria) || [];
+  const flagged = rs.filter(r => r.risk_level === "medium" || r.risk_level === "high").length;
+  const avg = rs.length ? rs.reduce((s, r) => s + Number(r.total || 0), 0) / rs.length : 0;
+  const errors = rs.filter(r => r.error).length;
+  $("#resultStats").innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="k">已评阅</div><div class="v">${rs.length}</div></div>
+      <div class="stat"><div class="k">平均分</div><div class="v">${fmtNum(avg)}</div></div>
+      <div class="stat"><div class="k">最高分</div><div class="v">${rs.length ? fmtNum(Math.max(...rs.map(r => r.total))) : 0}</div></div>
+      <div class="stat"><div class="k">需要留意</div><div class="v">${flagged}</div></div>
+      ${errors ? `<div class="stat"><div class="k">打分失败</div><div class="v">${errors}</div></div>` : ""}
+    </div>
+    ${state.mock ? '<div class="notice warn">当前是<b>演示模式</b>：分数是占位数据，不能作为成绩依据。配好 API Key 后点「重新打分」即可。</div>' : ""}
+    ${errors ? '<div class="notice bad">有 ' + errors + ' 份没能打分成功（多为网络或额度问题），可点「重新打分」只补这些。</div>' : ""}`;
+
+  const head = criteria.map(c => `<th class="c">${esc(c.name)}<br><span style="font-weight:400;color:var(--ink-3)">满分${fmtNum(c.max_score)}</span></th>`).join("");
+  const rows = rs.map((r, i) => {
+    const risk = RISK[r.risk_level] || RISK.none;
+    const cells = criteria.map(c => {
+      const got = (r.criteria || []).find(x => x.key === c.key);
+      const score = got ? got.score : 0;
+      return `<td class="c">
+        <input type="number" class="score-in" data-i="${i}" data-key="${esc(c.key)}"
+               value="${fmtNum(score)}" min="0" max="${fmtNum(c.max_score)}" step="0.5">
+        <span class="band">${esc(got && got.band ? got.band : "")}</span></td>`;
+    }).join("");
+    const hits = (r.similarity || []).map(h =>
+      `<span class="chip ${h.ratio >= 0.75 ? "bad" : "warn"}">与「${esc(h.name)}」${Math.round(h.ratio * 100)}%</span>`).join(" ");
+    const open = state.expanded[i];
+    return `<tr data-i="${i}" class="${risk.chip === "bad" ? "risky" : ""}">
+      <td class="c num">${i + 1}</td>
+      <td class="name">${esc(r.name)}<span class="raw">${esc(r.student_id || (r.raw_name !== r.name ? r.raw_name : ""))}</span></td>
+      ${cells}
+      <td class="c"><span class="total">${fmtNum(r.total)}</span><span class="band" style="text-align:center">/ ${fmtNum(r.max_total)}</span></td>
+      <td class="risk"><div class="lvl"><span class="risk-dot" style="background:${risk.c}"></span>${risk.t}</div>
+        <div style="margin-top:3px">${hits}</div></td>
+      <td class="c"><button class="btn sm ghost" data-act="toggle" data-i="${i}">${open ? "收起" : "详情"}</button></td>
+    </tr>`
+    + (open ? detailRow(r, i, criteria) : "");
+  }).join("");
+
+  $("#resultWrap").innerHTML = `<table><thead><tr>
+      <th class="c" style="width:44px">#</th><th style="min-width:120px">学生</th>${head}
+      <th class="c" style="width:92px">总分</th><th style="min-width:110px">风险提示</th>
+      <th class="c" style="width:74px"></th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+
+  $$(".score-in").forEach(inp => inp.oninput = e => {
+    const i = Number(e.target.dataset.i), key = e.target.dataset.key;
+    const item = state.results[i];
+    const got = (item.criteria || []).find(x => x.key === key);
+    if (!got) return;
+    const max = Number(e.target.max || got.max_score);
+    let v = Number(e.target.value);
+    if (isNaN(v)) v = 0;
+    if (v < 0) v = 0;
+    if (v > max) v = max;
+    got.score = v;
+    item.total = Math.round((item.criteria || []).reduce((s, x) => s + Number(x.score || 0), 0) * 100) / 100;
+    item.reviewed = true;
+    e.target.classList.add("edited");
+    const tr = e.target.closest("tr");
+    $(".total", tr).textContent = fmtNum(item.total);
+  });
+  $$("[data-act=toggle]").forEach(btn => btn.onclick = () => {
+    const i = Number(btn.dataset.i);
+    state.expanded[i] = !state.expanded[i];
+    renderResults();
+  });
+  $$("[data-role=rcomment]").forEach(t => t.oninput = e => {
+    const i = Number(e.target.dataset.i), key = e.target.dataset.key;
+    const got = (state.results[i].criteria || []).find(x => x.key === key);
+    if (got) { got.comment = e.target.value; state.results[i].reviewed = true; }
+  });
+  $$("[data-role=manual]").forEach(t => t.oninput = e => {
+    state.results[Number(e.target.dataset.i)].manual_comment = e.target.value;
+    state.results[Number(e.target.dataset.i)].reviewed = true;
+  });
+}
+
+function detailRow(r, i, criteria) {
+  const risk = RISK[r.risk_level] || RISK.none;
+  const signals = r.ai_signals || {};
+  const cmts = criteria.map(c => {
+    const got = (r.criteria || []).find(x => x.key === c.key);
+    return `<div style="margin-bottom:11px">
+      <div class="kicker" style="margin-bottom:4px">${esc(c.name)} · ${got ? fmtNum(got.score) : 0}/${fmtNum(c.max_score)}${got && got.band ? " · " + esc(got.band) : ""}</div>
+      <textarea class="cmt" data-role="rcomment" data-i="${i}" data-key="${esc(c.key)}"
+        placeholder="（没有评语）">${esc(got ? got.comment : "")}</textarea></div>`;
+  }).join("");
+  const reasons = (r.risk_reasons || []).map(x => `<div class="quote ${risk.chip === "bad" ? "warnq" : ""}">${esc(x)}</div>`).join("");
+  const evidence = (r.evidence || []).map(x => `<div class="quote warnq">${esc(x)}</div>`).join("");
+  const sims = (r.similarity || []).map(h => `<div class="meter">
+      <span style="min-width:96px">与「${esc(h.name)}」</span>
+      <span class="track"><span class="fill" style="width:${Math.round(h.ratio * 100)}%;background:${h.ratio >= 0.75 ? "var(--seal)" : "var(--amber)"}"></span></span>
+      <span class="num">${Math.round(h.ratio * 100)}%</span></div>
+      ${h.snippet ? `<div class="quote" style="font-size:12px">重合：${esc(h.snippet)}</div>` : ""}`).join("");
+
+  return `<tr class="detail"><td colspan="${criteria.length + 5}"><div class="detail-inner">
+    <div>
+      <h4>总评</h4>
+      <div class="quote" style="border-color:var(--seal)">${esc(r.overall_comment || "（没有总评）")}${r.error ? '<br><b style="color:var(--seal)">打分失败：' + esc(r.error) + "</b>" : ""}</div>
+      <h4>老师补充意见</h4>
+      <textarea class="cmt big" data-role="manual" data-i="${i}" placeholder="留给自己的备注，会一起写进 Excel">${esc(r.manual_comment || "")}</textarea>
+      <h4 style="margin-top:14px">心得原文</h4>
+      <div class="essay">${esc(r.content || "（空）")}</div>
+    </div>
+    <div>
+      <h4>各维度评语</h4>${cmts}
+      <h4>风险判断（${risk.t}）</h4>${reasons || '<div class="quote" style="border-color:var(--line)">没有发现明显问题</div>'}
+      ${evidence ? "<h4 style='margin-top:12px'>可疑原句</h4>" + evidence : ""}
+      ${sims ? "<h4 style='margin-top:12px'>同批次雷同比对</h4>" + sims : ""}
+      <h4 style="margin-top:12px">语言特征（工具检测）</h4>
+      <div class="quote" style="font-size:12px">
+        套话命中 ${(signals.cliche_hits || []).length} 处 · 具体细节 ${(signals.concrete_hits || []).length} 处<br>
+        平均句长 ${signals.avg_sentence_len || 0} 字 · 句长变异 ${signals.sentence_len_cv || 0}<br>
+        AI 味分数 ${signals.score || 0} / 100
+      </div>
+      <div class="hintline">这些只是提示，不作为判罚依据，最终由老师判断。</div>
+    </div>
+  </div></td></tr>`;
+}
+
+/* ---------------- 导出 ---------------- */
+async function doExport() {
+  const btn = $("#btnExport"); btn.disabled = true;
+  try {
+    const payload = {
+      results: state.results, rubric: collectRubric(),
+      class_name: (state.config || {}).class_name || "", mock: state.mock
+    };
+    const resp = await fetch("/api/export", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      let msg = "导出失败（HTTP " + resp.status + "）";
+      try { const j = await resp.json(); if (j.error) msg = j.error; } catch (e) { }
+      throw new Error(msg);
+    }
+    const blob = await resp.blob();
+    let name = "课堂心得成绩.xlsx";
+    const enc = resp.headers.get("X-Filename-Encoded");
+    if (enc) { try { name = decodeURIComponent(enc); } catch (e) { } }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("已导出：" + name, "ok");
+  } catch (e) {
+    toast(e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ---------------- 事件绑定 ---------------- */
+function bindAll() {
+  $("#btnSample").onclick = () => {
+    $("#chatText").value = SAMPLE_CHAT;
+    $("#charCount").textContent = SAMPLE_CHAT.length + " 字";
+    toast("已填入示例记录，可以直接点「解析预览」", "ok");
+  };
+  $("#btnClear").onclick = () => { $("#chatText").value = ""; $("#charCount").textContent = "0 字"; };
+  $("#chatText").oninput = e => $("#charCount").textContent = e.target.value.length + " 字";
+  $("#btnParse").onclick = doParse;
+  $("#btnBack1").onclick = () => setStep(1);
+  $("#btnBack2").onclick = () => setStep(2);
+  $("#btnGrade").onclick = doGrade;
+  $("#btnRegrade").onclick = doGrade;
+  $("#btnExport").onclick = doExport;
+  $("#markReviewed").onchange = e => {
+    state.results.forEach(r => r.reviewed = e.target.checked);
+    toast(e.target.checked ? "已全部标记为复核完成" : "已取消复核标记");
+  };
+  $("#btnRulesToggle").onclick = () => {
+    const panel = $("#rubricBody .crit-edit");
+    if (panel) panel.open = true;
+    (panel || $("#rubricBody")).scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  $("#btnSettings").onclick = openDrawer;
+  $("#btnDrawerClose").onclick = closeDrawer;
+  $("#btnCfgCancel").onclick = closeDrawer;
+  $("#scrim").onclick = closeDrawer;
+  $("#btnCfgSave").onclick = async () => {
+    try {
+      const data = await api("/api/config", {
+        api_key: $("#cfgKey").value.trim(),
+        base_url: $("#cfgBase").value.trim(),
+        model: $("#cfgModel").value.trim(),
+        class_name: $("#cfgClass").value.trim(),
+        concurrency: Number($("#cfgConc").value || 4),
+        timeout: Number($("#cfgTimeout").value || 90)
+      });
+      state.config = data.config;
+      renderMode();
+      closeDrawer();
+      toast("设置已保存", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  };
+  $("#btnQuit").onclick = async () => {
+    if (!confirm("确定要退出程序吗？")) return;
+    try { await api("/api/shutdown", {}); } catch (e) { }
+    document.body.innerHTML =
+      '<div style="padding:80px;text-align:center;font-family:system-ui">' +
+      '<h2>程序已退出</h2><p style="color:#8A8178">现在可以关闭这个页面了。</p></div>';
+  };
+}
+
+(async function init() {
+  bindAll();
+  try {
+    await loadConfig();
+    const data = await api("/api/rubric");
+    state.rubric = data.rubric;
+    renderRubric();
+    if ((state.config || {}).mode !== "live") {
+      $("#banner").innerHTML = '<div class="notice warn">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' +
+        '<div>当前是<b>演示模式</b>：没有配置 API Key，打分只会给出占位分数（用来验证流程）。' +
+        '点右上角「设置」填入 API Key 后即可真实评阅。</div></div>';
+    }
+    // 一键演示：地址后面加 ?demo=1 会自动填示例并跑完一遍
+    if (new URLSearchParams(location.search).has("demo")) {
+      $("#chatText").value = SAMPLE_CHAT;
+      $("#charCount").textContent = SAMPLE_CHAT.length + " 字";
+      await doParse();
+      await doGrade();
+      if (new URLSearchParams(location.search).has("expand")) {
+        state.expanded[0] = true;
+        renderResults();
+      }
+    }
+  } catch (e) {
+    toast("初始化失败：" + e.message, "err");
+  }
+})();
+</script>
+</body>
+</html>

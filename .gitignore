@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# 打包产物
+build/
+dist/
+*.spec
+# 打包时由 build.py 自动生成（内容来自 web/index.html）
+core/_frontend.py
+_shots/
+
+# 老师本地的配置（含 API Key，绝对不能提交）
+config.ini
+.env
+
+# 交付包（exe + 说明的拷贝，属于构建产物不是源码；exe 走 GitHub Releases）
+交付-*/
+老师请点我打开应用/
+*.exe
+
+# 导出的成绩
+output/
+*.xlsx
+
+# 编辑器
+.vscode/
+.idea/
+*.swp

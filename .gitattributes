@@ -1,0 +1,27 @@
+# 统一换行符，避免 Windows/Linux 之间来回提交产生整文件 diff
+* text=auto
+
+*.py      text eol=lf
+*.html    text eol=lf
+*.js      text eol=lf
+*.css     text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.toml    text eol=lf
+*.json    text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitignore text eol=lf
+
+# 给老师看的说明用 Windows 换行，记事本打开才正常
+使用说明.txt text eol=crlf
+
+# 测试样本保留原样（有的就是故意带 CRLF 的）
+tests/fixtures/*.txt -text
+
+# 二进制
+*.exe     binary
+*.xlsx    binary
+*.png     binary
+*.ico     binary

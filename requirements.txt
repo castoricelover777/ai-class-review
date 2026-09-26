@@ -1,0 +1,9 @@
+# 运行时依赖：只有这一项，其余全部走标准库
+# （HTTP 服务用 http.server，大模型调用用 urllib，没有 requests / openai / streamlit）
+openpyxl>=3.1
+
+# 打包成 exe 用
+pyinstaller>=6.10
+
+# 说明：单元测试用标准库自带的 unittest，不需要额外安装。
+#      跑测试：python -m unittest discover -s tests -t .
