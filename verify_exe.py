@@ -186,7 +186,12 @@ def main() -> int:
         status, body = get(base, "/")
         html = body.decode("utf-8")
         check("打开界面", status == 200 and "课堂心得评阅台" in html, f"{len(html)} 字符")
-        check("界面不依赖外部资源", "cdn" not in html and "<script src=" not in html)
+        # 界面自带的样式/脚本必须内联。注意：界面里会出现 Pyodide 的 CDN 地址，
+        # 那是**在线版**用的；exe 版启动时会探测到本机服务，直接走 HTTP，不会去请求它。
+        check("界面自带样式与脚本（无外链）",
+              "<script src=" not in html and '<link rel="stylesheet"' not in html)
+        check("界面会先探测本机后端（exe 才能走本地服务）",
+              'fetch("api/health"' in html and "async getConfig" in html)
 
         _, cfg, _ = post(base, "/api/config", {
             "api_key": "sk-faketest1234567890", "class_name": "计科2201",
